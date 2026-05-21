@@ -4,31 +4,40 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/grpc/reflection"
+
 	"github.com/asolovov/evm-oracle-demo-price-service/config"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/aggregator"
+	pricev1 "github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/price/v1"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/grpc/handlers"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/repository"
 	"github.com/asolovov/evm-oracle-demo-price-service/pkg/logger"
 )
 
-// Module owns the lifecycle of the gRPC server.
-//
-// The price.v1.PriceService handler is registered in task 10; for now this
-// module just stands up the server framework + the standard gRPC health
-// service so docker compose health checks work end-to-end.
+// Module owns the gRPC server lifecycle and registers the PriceService
+// handler.
 type Module struct {
 	config *config.GRPCConfig
+	aggMod *aggregator.Module
+	repo   repository.PriceRepository
 	server *Server
 }
 
-// NewModule creates a new gRPC module instance.
-func NewModule(cfg *config.GRPCConfig) *Module {
-	return &Module{config: cfg}
+// NewModule wires the gRPC module with its handler dependencies.
+func NewModule(cfg *config.GRPCConfig, aggMod *aggregator.Module, repo repository.PriceRepository) *Module {
+	return &Module{
+		config: cfg,
+		aggMod: aggMod,
+		repo:   repo,
+	}
 }
 
 // Name returns the module identifier.
-func (m *Module) Name() string {
-	return "grpc"
-}
+func (m *Module) Name() string { return "grpc" }
 
-// Init starts the listener and registers the standard health service.
+// Init creates the listener, registers the standard health service, the
+// price.v1.PriceService handler, and (when enabled) server reflection for
+// grpcurl-driven debugging.
 func (m *Module) Init(_ context.Context) error {
 	logger.Log().Infof("initializing %s module on %s:%d", m.Name(), m.config.Host, m.config.Port)
 
@@ -42,6 +51,15 @@ func (m *Module) Init(_ context.Context) error {
 		return fmt.Errorf("register health service: %w", err)
 	}
 
+	priceHandler := handlers.NewPriceServiceHandler(m.aggMod.Aggregator(), m.aggMod.Bus(), m.repo)
+	pricev1.RegisterPriceServiceServer(m.server.Server(), priceHandler)
+	logger.Log().Info("registered price.v1.PriceService handler")
+
+	if m.config.Reflection {
+		reflection.Register(m.server.Server())
+		logger.Log().Info("grpc server reflection enabled")
+	}
+
 	logger.Log().Infof("%s module initialized successfully", m.Name())
 	return nil
 }
@@ -49,13 +67,11 @@ func (m *Module) Init(_ context.Context) error {
 // Start begins gRPC server operation (non-blocking).
 func (m *Module) Start(_ context.Context) error {
 	m.server.MarkRunning()
-
 	go func() {
 		if err := m.server.Serve(); err != nil {
 			logger.Log().Errorf("grpc server error: %v", err)
 		}
 	}()
-
 	logger.Log().Infof("grpc server listening on %s:%d", m.config.Host, m.config.Port)
 	return nil
 }
@@ -81,8 +97,5 @@ func (m *Module) HealthCheck(_ context.Context) error {
 	return nil
 }
 
-// Server exposes the underlying gRPC server so handler-registration code
-// (added in task 10) can call e.g. pricev1.RegisterPriceServiceServer.
-func (m *Module) Server() *Server {
-	return m.server
-}
+// Server exposes the underlying server for callers that need it.
+func (m *Module) Server() *Server { return m.server }

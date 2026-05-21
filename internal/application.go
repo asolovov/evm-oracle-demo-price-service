@@ -1,10 +1,16 @@
 // Package internal wires the application together.
 //
 // Architecture rules 1 + 2 — cmd/ does only Cobra/Viper init; this package
-// creates, wires, and lifecycles every component. The service's modules are
-// repository (postgres), aggregator (with embedded source adapters and
-// scheduler), gRPC server, and healthz HTTP. Each module satisfies the
-// module.Module interface registered with module.Manager.
+// creates, wires, and lifecycles every component. The service's modules,
+// in registration order:
+//
+//  1. repository  (postgres pool, owns evm_price)
+//  2. aggregator  (source registry + scheduler + in-memory bus)
+//  3. grpc        (price.v1.PriceService + reflection + grpc health)
+//  4. healthz     (HTTP /healthz, /readyz, /metrics)
+//
+// Each module satisfies module.Module; the module.Manager handles the
+// init / start / stop / health-check orchestration.
 package internal
 
 import (
@@ -16,8 +22,12 @@ import (
 	"time"
 
 	"github.com/asolovov/evm-oracle-demo-price-service/config"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/aggregator"
+	grpcmod "github.com/asolovov/evm-oracle-demo-price-service/internal/grpc"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/healthz"
 	"github.com/asolovov/evm-oracle-demo-price-service/internal/module"
 	"github.com/asolovov/evm-oracle-demo-price-service/internal/repository"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/sources"
 	"github.com/asolovov/evm-oracle-demo-price-service/pkg/logger"
 	"github.com/asolovov/evm-oracle-demo-price-service/pkg/version"
 )
@@ -27,11 +37,9 @@ type App struct {
 	config  *config.Scheme
 	version *version.Version
 	modules *module.Manager
-
-	repo repository.PriceRepository
 }
 
-// NewApplication returns a fresh App with an empty config and module manager.
+// NewApplication returns a fresh App with an empty config + module manager.
 // Cobra populates app.config via Viper before Init runs.
 func NewApplication() (*App, error) {
 	ver, err := version.NewVersion()
@@ -55,16 +63,15 @@ func (app *App) Version() string {
 	return app.version.String()
 }
 
-// Modules returns the module manager (useful for HealthCheck wiring).
+// Modules returns the module manager.
 func (app *App) Modules() *module.Manager {
 	return app.modules
 }
 
-// Init validates configuration, then registers and initialises every module.
-// Modules are registered in dependency order so the manager initialises them
-// in that order too (see module.Manager.Register + InitAll).
-//
-//nolint:gocyclo // module-wiring orchestration; decompose if it grows further.
+// Init validates configuration, then constructs + initialises each module in
+// dependency order (repository -> aggregator -> grpc -> healthz). Module
+// constructors that take dependencies receive them here; nothing wires
+// itself.
 func (app *App) Init() error {
 	if err := app.config.Validate(); err != nil {
 		return fmt.Errorf("config validate: %w", err)
@@ -72,26 +79,47 @@ func (app *App) Init() error {
 
 	ctx := context.Background()
 
-	// 1. Repository (Postgres). Owns the `evm_price` database; everything
-	//    else needs its handle.
-	repoModule := repository.NewModule(&app.config.Database)
-	if err := repoModule.Init(ctx); err != nil {
+	// 1. Repository.
+	repoMod := repository.NewModule(&app.config.Database)
+	if err := repoMod.Init(ctx); err != nil {
 		return fmt.Errorf("init repository: %w", err)
 	}
-	app.modules.Register(repoModule)
-	app.repo = repoModule.Repository()
+	app.modules.Register(repoMod)
+	repo := repoMod.Repository()
 
-	// 2. Aggregator (with embedded sources + scheduler). Wired in task 8.
-	// 3. gRPC server. Wired in task 10.
-	// 4. Healthz HTTP. Wired in task 12.
-	// TODO: register the modules above once their implementations land.
+	// 2. Source adapters + aggregator.
+	registry, err := sources.NewRegistry(app.config.Sources)
+	if err != nil {
+		return fmt.Errorf("build source registry: %w", err)
+	}
+	aggMod, err := aggregator.NewModule(app.config.Aggregation, app.config.Assets, registry, repo)
+	if err != nil {
+		return fmt.Errorf("build aggregator: %w", err)
+	}
+	if err := aggMod.Init(ctx); err != nil {
+		return fmt.Errorf("init aggregator: %w", err)
+	}
+	app.modules.Register(aggMod)
+
+	// 3. gRPC server.
+	grpcModule := grpcmod.NewModule(&app.config.GRPC, aggMod, repo)
+	if err := grpcModule.Init(ctx); err != nil {
+		return fmt.Errorf("init grpc: %w", err)
+	}
+	app.modules.Register(grpcModule)
+
+	// 4. Healthz HTTP. Registered last so it can poll the others.
+	healthzMod := healthz.NewModule(&app.config.Healthz, app.modules)
+	if err := healthzMod.Init(ctx); err != nil {
+		return fmt.Errorf("init healthz: %w", err)
+	}
+	app.modules.Register(healthzMod)
 
 	logger.Log().Infof("application initialised: %d module(s) registered", app.modules.Count())
 	return nil
 }
 
-// Serve starts every registered module and blocks until SIGINT / SIGTERM /
-// SIGQUIT. Returns nil on graceful shutdown.
+// Serve starts every registered module and blocks until a shutdown signal.
 func (app *App) Serve() error {
 	ctx := context.Background()
 	if err := app.modules.StartAll(ctx); err != nil {
@@ -106,8 +134,7 @@ func (app *App) Serve() error {
 	return nil
 }
 
-// Stop runs StopAll with a bounded shutdown deadline. Always invoked from the
-// Cobra PostRun hook so it fires even when Serve returns an error.
+// Stop drives StopAll with a bounded shutdown deadline.
 func (app *App) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
