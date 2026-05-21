@@ -24,7 +24,7 @@ TAG        := $(shell git describe --abbrev=0 --tags 2>/dev/null || true)
 COMMIT     := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 BRANCH     := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
 REMOTE     := $(shell git config --get remote.origin.url 2>/dev/null || echo unknown)
-BUILD_DATE := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
+BUILD_DATE := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ%Z')
 RELEASE    := $(if $(TAG),$(TAG),$(COMMIT))
 
 LDFLAGS := -w -s

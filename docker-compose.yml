@@ -1,4 +1,12 @@
-version: '3.8'
+# Local docker-compose for price-service. Brings up Postgres, runs
+# migrations once, then starts the service.
+#
+# Bring up:
+#   docker compose --env-file .env.local up --build
+#
+# .env.local must define the API keys (SOURCES_*_API_KEY) — see
+# .env.example for the full surface. The compose file does NOT bake any
+# secret into image / env defaults.
 
 services:
   postgres:
@@ -7,42 +15,56 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_PASSWORD: dev
-      POSTGRES_USER: dev
-      POSTGRES_DB: microservice_dev
+      POSTGRES_USER: price_user
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-price_pass}
+      POSTGRES_DB: evm_price
     volumes:
       - ./data/db/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U price_user -d evm_price"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   migrate:
-    image: migrate/migrate
+    image: migrate/migrate:v4.18.1
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     volumes:
-      - ./db/migrations:/migrations
-    command: ["-path=/migrations", "-database", "postgres://dev:dev@postgres:5432/microservice_dev?sslmode=disable", "up"]
+      - ./migrations:/migrations
+    command:
+      - "-path=/migrations"
+      - "-database"
+      - "postgres://price_user:${DATABASE_PASSWORD:-price_pass}@postgres:5432/evm_price?sslmode=disable"
+      - "up"
 
-  app:
+  price-service:
     build: .
     restart: unless-stopped
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
-      - "8080:8080"   # HTTP REST API
-      - "9090:9090"   # gRPC
+      - "50051:50051"   # gRPC
+      - "8080:8080"     # healthz / metrics
     environment:
-      # Database configuration
-      DATABASE_ENABLED: "true"
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_USER: dev
-      DATABASE_PASSWORD: dev
-      DATABASE_NAME: microservice_dev
-      # HTTP REST API configuration
-      HTTP_ENABLED: "true"
-      HTTP_HOST: "0.0.0.0"
-      HTTP_PORT: 8080
-      HTTP_MOCK_AUTH: "true"  # Bypass JWT validation for local dev
-      # gRPC configuration
-      GRPC_ENABLED: "true"
-      GRPC_HOST: "0.0.0.0"
-      GRPC_PORT: 9090
+      DATABASE_USER: price_user
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-price_pass}
+      DATABASE_NAME: evm_price
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: 50051
+      HEALTHZ_HOST: 0.0.0.0
+      HEALTHZ_PORT: 8080
+      SOURCES_UNISWAP_V3_API_KEY: ${SOURCES_UNISWAP_V3_API_KEY}
+      SOURCES_ALPHA_VANTAGE_API_KEY: ${SOURCES_ALPHA_VANTAGE_API_KEY}
+      SOURCES_TWELVE_DATA_API_KEY: ${SOURCES_TWELVE_DATA_API_KEY}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

@@ -17,8 +17,8 @@ import (
 // Cmd returns the root command for the application.
 func Cmd(app *internal.App) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:              "github.com/asolovov/evm-oracle-demo-price-service",
-		Short:            "Service Template",
+		Use:              "price-service",
+		Short:            "evm-oracle-demo price-service — multi-source off-chain price aggregation",
 		TraverseChildren: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return initializeConfig(cmd, app.Config())
