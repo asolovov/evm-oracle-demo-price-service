@@ -20,7 +20,7 @@ import (
 //
 // Symbol is the pool address (0x-prefixed, lowercase). The adapter resolves
 // token0/token1 + token0Price/token1Price from the subgraph and picks the
-// price whose denominator is a recognised USD stablecoin (USDC/USDT/DAI).
+// price whose denominator is a recognized USD stablecoin (USDC/USDT/DAI).
 //
 // Requires a Graph Gateway API key; the URL is
 // https://gateway.thegraph.com/api/<API_KEY>/subgraphs/id/<SUBGRAPH_ID>.
@@ -39,7 +39,7 @@ const UniswapV3SubgraphID = "ESdrTJ3twMwWVoQ1hUE2u7PugEHX3QkenudD6aXCkDQ4"
 func NewUniswapV3(cfg config.SourceConfig) (Adapter, error) {
 	timeout, err := time.ParseDuration(cfg.Timeout)
 	if err != nil {
-		return nil, fmt.Errorf("%w: uniswap_v3.timeout: %v", ErrConfig, err)
+		return nil, fmt.Errorf("%w: uniswap_v3.timeout: %w", ErrConfig, err)
 	}
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("%w: uniswap_v3.base_url is required", ErrConfig)
@@ -104,11 +104,9 @@ const uniswapV3Query = `query PriceByPool($pool: ID!) {
 
 // Fetch posts the GraphQL query for the pool and returns the USD price of
 // the non-stable side.
-//
-//nolint:gocyclo // straightforward decode + branch on which side is stable.
 func (u *UniswapV3) Fetch(ctx context.Context, poolAddress string) (models.RawPrice, error) {
 	if err := u.acquireToken(ctx); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %w", ErrUpstream, err)
 	}
 
 	body, err := json.Marshal(map[string]any{
@@ -116,13 +114,13 @@ func (u *UniswapV3) Fetch(ctx context.Context, poolAddress string) (models.RawPr
 		"variables": map[string]string{"pool": strings.ToLower(poolAddress)},
 	})
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: marshal request: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: marshal request: %w", ErrUpstream, err)
 	}
 
 	endpoint := fmt.Sprintf("%s/%s/subgraphs/id/%s", u.baseURL, u.apiKey, u.subgraphID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: build request: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: build request: %w", ErrUpstream, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -130,13 +128,13 @@ func (u *UniswapV3) Fetch(ctx context.Context, poolAddress string) (models.RawPr
 	now := time.Now().UTC()
 	resp, err := u.httpClient.Do(req)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: %w", ErrUpstream, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: read body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: read body: %w", ErrUpstream, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return models.RawPrice{}, fmt.Errorf("%w: http %d: %s", ErrUpstream, resp.StatusCode, truncate(raw, 256))
@@ -144,7 +142,7 @@ func (u *UniswapV3) Fetch(ctx context.Context, poolAddress string) (models.RawPr
 
 	var parsed uniswapV3Resp
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: decode body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: decode body: %w", ErrUpstream, err)
 	}
 	if len(parsed.Errors) > 0 {
 		return models.RawPrice{}, fmt.Errorf("%w: graph errors: %s", ErrUpstream, parsed.Errors[0].Message)
@@ -177,7 +175,7 @@ func (u *UniswapV3) Fetch(ctx context.Context, poolAddress string) (models.RawPr
 
 	price, err := strconv.ParseFloat(priceStr, 64)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: parse price %q: %v", ErrUpstream, priceStr, err)
+		return models.RawPrice{}, fmt.Errorf("%w: parse price %q: %w", ErrUpstream, priceStr, err)
 	}
 	if price <= 0 {
 		return models.RawPrice{}, fmt.Errorf("%w: uniswap_v3 returned non-positive price for %s", ErrNoData, poolAddress)

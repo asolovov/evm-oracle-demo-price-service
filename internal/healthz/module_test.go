@@ -37,7 +37,7 @@ func startTestModule(t *testing.T, manager *module.Manager) (string, func()) {
 	t.Helper()
 
 	// Grab an ephemeral port before binding so the test knows where to GET.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0") //nolint:noctx // ephemeral port picker
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestHealthzLiveness(t *testing.T) {
 	base, teardown := startTestModule(t, mgr)
 	defer teardown()
 
-	resp, err := http.Get(base + "/healthz")
+	resp, err := httpGet(t, base+"/healthz")
 	if err != nil {
 		t.Fatalf("GET /healthz: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestReadyzAllHealthy(t *testing.T) {
 	base, teardown := startTestModule(t, mgr)
 	defer teardown()
 
-	resp, err := http.Get(base + "/readyz")
+	resp, err := httpGet(t, base+"/readyz")
 	if err != nil {
 		t.Fatalf("GET /readyz: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestReadyzFailingPeerReturns503(t *testing.T) {
 	base, teardown := startTestModule(t, mgr)
 	defer teardown()
 
-	resp, err := http.Get(base + "/readyz")
+	resp, err := httpGet(t, base+"/readyz")
 	if err != nil {
 		t.Fatalf("GET /readyz: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestMetricsStub(t *testing.T) {
 	base, teardown := startTestModule(t, mgr)
 	defer teardown()
 
-	resp, err := http.Get(base + "/metrics")
+	resp, err := httpGet(t, base+"/metrics")
 	if err != nil {
 		t.Fatalf("GET /metrics: %v", err)
 	}
@@ -150,6 +150,18 @@ func TestMetricsStub(t *testing.T) {
 	if !strings.Contains(string(body), "metrics not yet wired") {
 		t.Fatalf("expected stub body, got %s", body)
 	}
+}
+
+// httpGet is a tiny wrapper around http.Client.Do so tests use a
+// ctx-aware request (lint: noctx) without each call site duplicating
+// the request builder.
+func httpGet(t *testing.T, url string) (*http.Response, error) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
 }
 
 func TestHealthCheckBeforeStart(t *testing.T) {

@@ -59,7 +59,7 @@ func (h *PriceServiceHandler) GetPrice(ctx context.Context, req *pricev1.GetPric
 // On stream open the server pushes the current persisted price for each
 // subscribed asset (if any), then forwards every aggregator publish that
 // matches the subscription filter. The stream closes when the client
-// cancels, the bus subscription is cancelled, or the aggregator stops.
+// cancels, the bus subscription is canceled, or the aggregator stops.
 func (h *PriceServiceHandler) Subscribe(req *pricev1.SubscribeRequest, srv pricev1.PriceService_SubscribeServer) error {
 	rawIDs := req.GetAssetIds()
 	if len(rawIDs) == 0 {

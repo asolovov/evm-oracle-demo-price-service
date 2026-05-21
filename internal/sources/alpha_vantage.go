@@ -31,7 +31,7 @@ type AlphaVantage struct {
 func NewAlphaVantage(cfg config.SourceConfig) (Adapter, error) {
 	timeout, err := time.ParseDuration(cfg.Timeout)
 	if err != nil {
-		return nil, fmt.Errorf("%w: alpha_vantage.timeout: %v", ErrConfig, err)
+		return nil, fmt.Errorf("%w: alpha_vantage.timeout: %w", ErrConfig, err)
 	}
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("%w: alpha_vantage.base_url is required", ErrConfig)
@@ -88,7 +88,7 @@ var metalsAndFX = map[string]struct{}{
 // Fetch retrieves the latest price for the given Alpha Vantage symbol.
 func (a *AlphaVantage) Fetch(ctx context.Context, symbol string) (models.RawPrice, error) {
 	if err := a.acquireToken(ctx); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %w", ErrUpstream, err)
 	}
 
 	upperSym := strings.ToUpper(symbol)
@@ -115,7 +115,7 @@ func (a *AlphaVantage) fetchFX(ctx context.Context, symbol string) (models.RawPr
 
 	var parsed alphaVantageFXResp
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: decode body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: decode body: %w", ErrUpstream, err)
 	}
 	if err := alphaVantageError(parsed.Note, parsed.Info, parsed.ErrorMsg); err != nil {
 		return models.RawPrice{}, err
@@ -125,7 +125,7 @@ func (a *AlphaVantage) fetchFX(ctx context.Context, symbol string) (models.RawPr
 	}
 	price, err := strconv.ParseFloat(parsed.Rate.Exchange, 64)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: parse rate %q: %v", ErrUpstream, parsed.Rate.Exchange, err)
+		return models.RawPrice{}, fmt.Errorf("%w: parse rate %q: %w", ErrUpstream, parsed.Rate.Exchange, err)
 	}
 	now := time.Now().UTC()
 	observed := now
@@ -161,7 +161,7 @@ func (a *AlphaVantage) fetchQuote(ctx context.Context, symbol string) (models.Ra
 
 	var parsed alphaVantageQuoteResp
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: decode body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: decode body: %w", ErrUpstream, err)
 	}
 	if err := alphaVantageError(parsed.Note, parsed.Info, parsed.ErrorMsg); err != nil {
 		return models.RawPrice{}, err
@@ -171,7 +171,7 @@ func (a *AlphaVantage) fetchQuote(ctx context.Context, symbol string) (models.Ra
 	}
 	price, err := strconv.ParseFloat(parsed.Quote.Price, 64)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: parse price %q: %v", ErrUpstream, parsed.Quote.Price, err)
+		return models.RawPrice{}, fmt.Errorf("%w: parse price %q: %w", ErrUpstream, parsed.Quote.Price, err)
 	}
 	now := time.Now().UTC()
 	observed := now
@@ -193,17 +193,17 @@ func (a *AlphaVantage) do(ctx context.Context, q url.Values) ([]byte, int, error
 	endpoint := fmt.Sprintf("%s/query?%s", a.baseURL, q.Encode())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: build request: %v", ErrUpstream, err)
+		return nil, 0, fmt.Errorf("%w: build request: %w", ErrUpstream, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %v", ErrUpstream, err)
+		return nil, 0, fmt.Errorf("%w: %w", ErrUpstream, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: read body: %v", ErrUpstream, err)
+		return nil, 0, fmt.Errorf("%w: read body: %w", ErrUpstream, err)
 	}
 	return body, resp.StatusCode, nil
 }

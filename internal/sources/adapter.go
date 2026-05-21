@@ -21,7 +21,7 @@ import (
 // Adapter fetches a single price observation from one source.
 //
 // Implementations MUST:
-//   - Honour ctx cancellation (every blocking call accepts a context).
+//   - Honor ctx cancellation (every blocking call accepts a context).
 //   - Respect the internal rate limit (use AcquireToken below).
 //   - Return ErrNoData when the upstream responds but does not carry a
 //     usable price (out-of-hours RWA, asset not listed by the source).
@@ -54,7 +54,7 @@ var (
 	ErrNoData = errors.New("source returned no data")
 
 	// ErrUpstream wraps transport / 5xx / decode failures. Callers should
-	// pair this with the underlying cause via fmt.Errorf("%w: %v", ErrUpstream, cause).
+	// pair this with the underlying cause via fmt.Errorf("%w: %w", ErrUpstream, cause).
 	ErrUpstream = errors.New("upstream source error")
 
 	// ErrConfig is returned by NewSource constructors when configuration is
@@ -92,7 +92,7 @@ func newBaseClient(kind models.SourceKind, baseURL, apiKey string, timeout time.
 	return bc
 }
 
-// acquireToken blocks until the rate limiter releases or ctx is cancelled.
+// acquireToken blocks until the rate limiter releases or ctx is canceled.
 // No-op when limiter is nil.
 func (b *baseClient) acquireToken(ctx context.Context) error {
 	if b.limiter == nil {

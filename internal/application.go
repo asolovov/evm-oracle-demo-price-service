@@ -68,7 +68,7 @@ func (app *App) Modules() *module.Manager {
 	return app.modules
 }
 
-// Init validates configuration, then constructs + initialises each module in
+// Init validates configuration, then constructs + initializes each module in
 // dependency order (repository -> aggregator -> grpc -> healthz). Module
 // constructors that take dependencies receive them here; nothing wires
 // itself.
@@ -115,7 +115,7 @@ func (app *App) Init() error {
 	}
 	app.modules.Register(healthzMod)
 
-	logger.Log().Infof("application initialised: %d module(s) registered", app.modules.Count())
+	logger.Log().Infof("application initialized: %d module(s) registered", app.modules.Count())
 	return nil
 }
 

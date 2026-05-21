@@ -1,3 +1,6 @@
+// Package models holds the domain types for the price-service plus every
+// conversion method between them (proto, DB, string forms). Per
+// architecture rule 3, parsing/conversion always lives on the model type.
 package models
 
 import (
@@ -53,8 +56,9 @@ const (
 // strict-freshness path to pick which staleness threshold applies.
 type AssetClass int
 
+// AssetClass enum values. AssetClassUnknown is the zero value and is
+// always rejected at boundaries.
 const (
-	// AssetClassUnknown is the zero value. Always rejected at boundaries.
 	AssetClassUnknown AssetClass = iota
 	AssetClassCrypto
 	AssetClassRWA

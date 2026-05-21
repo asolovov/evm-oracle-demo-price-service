@@ -25,7 +25,7 @@ type CoinGecko struct {
 func NewCoinGecko(cfg config.SourceConfig) (Adapter, error) {
 	timeout, err := time.ParseDuration(cfg.Timeout)
 	if err != nil {
-		return nil, fmt.Errorf("%w: coingecko.timeout: %v", ErrConfig, err)
+		return nil, fmt.Errorf("%w: coingecko.timeout: %w", ErrConfig, err)
 	}
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("%w: coingecko.base_url is required", ErrConfig)
@@ -54,7 +54,7 @@ type coinGeckoResp map[string]struct {
 // Fetch retrieves the current USD price for the given CoinGecko id.
 func (c *CoinGecko) Fetch(ctx context.Context, symbol string) (models.RawPrice, error) {
 	if err := c.acquireToken(ctx); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %w", ErrUpstream, err)
 	}
 
 	q := url.Values{}
@@ -65,7 +65,7 @@ func (c *CoinGecko) Fetch(ctx context.Context, symbol string) (models.RawPrice, 
 	endpoint := fmt.Sprintf("%s/api/v3/simple/price?%s", c.baseURL, q.Encode())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: build request: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: build request: %w", ErrUpstream, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	if c.apiKey != "" {
@@ -76,13 +76,13 @@ func (c *CoinGecko) Fetch(ctx context.Context, symbol string) (models.RawPrice, 
 	now := time.Now().UTC()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: %w", ErrUpstream, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: read body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: read body: %w", ErrUpstream, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return models.RawPrice{}, fmt.Errorf("%w: http %d: %s", ErrUpstream, resp.StatusCode, truncate(body, 256))
@@ -90,7 +90,7 @@ func (c *CoinGecko) Fetch(ctx context.Context, symbol string) (models.RawPrice, 
 
 	var parsed coinGeckoResp
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: decode body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: decode body: %w", ErrUpstream, err)
 	}
 	entry, ok := parsed[symbol]
 	if !ok {

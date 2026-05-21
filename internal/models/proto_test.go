@@ -84,7 +84,7 @@ func TestSourceContributionUnknownSourceDegrades(t *testing.T) {
 		Included:         true,
 	})
 	if c.Source != SourceUnknown {
-		t.Fatalf("expected SourceUnknown for unrecognised source, got %v", c.Source)
+		t.Fatalf("expected SourceUnknown for unrecognized source, got %v", c.Source)
 	}
 	if c.Price != 123.45 {
 		t.Fatalf("Price = %v, want 123.45", c.Price)
@@ -96,7 +96,7 @@ func TestZeroTimestampOmitted(t *testing.T) {
 	a := AggregatedPrice{AssetID: "weth", MedianPrice: 1}
 	p := a.ToProto()
 	if p.GetAggregatedAt() != nil {
-		t.Fatalf("zero AggregatedAt should serialise as nil, got %v", p.GetAggregatedAt())
+		t.Fatalf("zero AggregatedAt should serialize as nil, got %v", p.GetAggregatedAt())
 	}
 }
 

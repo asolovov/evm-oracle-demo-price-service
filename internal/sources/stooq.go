@@ -32,7 +32,7 @@ type Stooq struct {
 func NewStooq(cfg config.SourceConfig) (Adapter, error) {
 	timeout, err := time.ParseDuration(cfg.Timeout)
 	if err != nil {
-		return nil, fmt.Errorf("%w: stooq.timeout: %v", ErrConfig, err)
+		return nil, fmt.Errorf("%w: stooq.timeout: %w", ErrConfig, err)
 	}
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("%w: stooq.base_url is required", ErrConfig)
@@ -55,7 +55,7 @@ func (s *Stooq) Kind() models.SourceKind { return models.SourceStooq }
 // Fetch retrieves the latest close for the given Stooq symbol.
 func (s *Stooq) Fetch(ctx context.Context, symbol string) (models.RawPrice, error) {
 	if err := s.acquireToken(ctx); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %w", ErrUpstream, err)
 	}
 
 	q := url.Values{}
@@ -66,20 +66,20 @@ func (s *Stooq) Fetch(ctx context.Context, symbol string) (models.RawPrice, erro
 	endpoint := fmt.Sprintf("%s/q/l/?%s", s.baseURL, q.Encode())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: build request: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: build request: %w", ErrUpstream, err)
 	}
 	req.Header.Set("Accept", "text/csv,text/plain")
 
 	now := time.Now().UTC()
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: %w", ErrUpstream, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: read body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: read body: %w", ErrUpstream, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return models.RawPrice{}, fmt.Errorf("%w: http %d: %s", ErrUpstream, resp.StatusCode, truncate(body, 256))
@@ -87,7 +87,7 @@ func (s *Stooq) Fetch(ctx context.Context, symbol string) (models.RawPrice, erro
 
 	rows, err := csv.NewReader(strings.NewReader(string(body))).ReadAll()
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: parse csv: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: parse csv: %w", ErrUpstream, err)
 	}
 	if len(rows) < 2 {
 		return models.RawPrice{}, fmt.Errorf("%w: stooq csv had no data rows for %q", ErrNoData, symbol)
@@ -118,7 +118,7 @@ func (s *Stooq) Fetch(ctx context.Context, symbol string) (models.RawPrice, erro
 	}
 	price, err := strconv.ParseFloat(closeRaw, 64)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: parse close %q: %v", ErrUpstream, closeRaw, err)
+		return models.RawPrice{}, fmt.Errorf("%w: parse close %q: %w", ErrUpstream, closeRaw, err)
 	}
 	if price <= 0 {
 		return models.RawPrice{}, fmt.Errorf("%w: stooq returned non-positive close for %q", ErrNoData, symbol)

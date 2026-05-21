@@ -40,11 +40,11 @@ func (m *Module) Init(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("repository.Init: parse pool config: %w", err)
 	}
-	if m.config.MaxOpenConns > 0 {
-		cfg.MaxConns = int32(m.config.MaxOpenConns)
+	if v := m.config.MaxOpenConns; v > 0 {
+		cfg.MaxConns = clampInt32(v)
 	}
-	if m.config.MaxIdleConns > 0 {
-		cfg.MinConns = int32(m.config.MaxIdleConns)
+	if v := m.config.MaxIdleConns; v > 0 {
+		cfg.MinConns = clampInt32(v)
 	}
 	if m.config.ConnMaxLifetime > 0 {
 		cfg.MaxConnLifetime = time.Duration(m.config.ConnMaxLifetime) * time.Second
@@ -86,7 +86,7 @@ func (m *Module) Stop(_ context.Context) error {
 // HealthCheck verifies that the pool can still reach Postgres.
 func (m *Module) HealthCheck(ctx context.Context) error {
 	if m.pool == nil {
-		return fmt.Errorf("repository: pool not initialised")
+		return fmt.Errorf("repository: pool not initialized")
 	}
 	return m.pool.Ping(ctx)
 }
@@ -97,7 +97,7 @@ func (m *Module) Repository() PriceRepository {
 	return m.repo
 }
 
-// dsn builds the pgx connection string. SSLMode is honoured per config; the
+// dsn builds the pgx connection string. SSLMode is honored per config; the
 // password is interpolated but never logged (see Init).
 func (m *Module) dsn() string {
 	return fmt.Sprintf(
@@ -106,4 +106,19 @@ func (m *Module) dsn() string {
 		m.config.Host, m.config.Port,
 		m.config.Name, m.config.SSLMode,
 	)
+}
+
+// clampInt32 narrows a config-supplied int to int32 with saturation,
+// avoiding gosec G115. Pool sizes are realistically two- or three-digit
+// values; the clamp exists so a misconfigured huge value cannot wrap to
+// a negative.
+func clampInt32(v int) int32 {
+	const maxInt32 = int(^uint32(0) >> 1)
+	if v > maxInt32 {
+		return int32(maxInt32)
+	}
+	if v < 0 {
+		return 0
+	}
+	return int32(v)
 }

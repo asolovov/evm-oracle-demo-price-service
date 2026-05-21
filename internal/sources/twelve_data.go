@@ -29,7 +29,7 @@ type TwelveData struct {
 func NewTwelveData(cfg config.SourceConfig) (Adapter, error) {
 	timeout, err := time.ParseDuration(cfg.Timeout)
 	if err != nil {
-		return nil, fmt.Errorf("%w: twelve_data.timeout: %v", ErrConfig, err)
+		return nil, fmt.Errorf("%w: twelve_data.timeout: %w", ErrConfig, err)
 	}
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("%w: twelve_data.base_url is required", ErrConfig)
@@ -62,7 +62,7 @@ type twelveDataResp struct {
 // Fetch retrieves the current price for the given Twelve Data symbol.
 func (t *TwelveData) Fetch(ctx context.Context, symbol string) (models.RawPrice, error) {
 	if err := t.acquireToken(ctx); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %w", ErrUpstream, err)
 	}
 
 	q := url.Values{}
@@ -72,20 +72,20 @@ func (t *TwelveData) Fetch(ctx context.Context, symbol string) (models.RawPrice,
 	endpoint := fmt.Sprintf("%s/price?%s", t.baseURL, q.Encode())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: build request: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: build request: %w", ErrUpstream, err)
 	}
 	req.Header.Set("Accept", "application/json")
 
 	now := time.Now().UTC()
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: %w", ErrUpstream, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: read body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: read body: %w", ErrUpstream, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return models.RawPrice{}, fmt.Errorf("%w: http %d: %s", ErrUpstream, resp.StatusCode, truncate(body, 256))
@@ -93,7 +93,7 @@ func (t *TwelveData) Fetch(ctx context.Context, symbol string) (models.RawPrice,
 
 	var parsed twelveDataResp
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: decode body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: decode body: %w", ErrUpstream, err)
 	}
 	// Twelve Data returns 200 OK with status="error" for unknown symbols and
 	// for quota exhaustion. Codes in the 4xx range are "user" issues
@@ -110,7 +110,7 @@ func (t *TwelveData) Fetch(ctx context.Context, symbol string) (models.RawPrice,
 	}
 	price, err := strconv.ParseFloat(parsed.Price, 64)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: parse price %q: %v", ErrUpstream, parsed.Price, err)
+		return models.RawPrice{}, fmt.Errorf("%w: parse price %q: %w", ErrUpstream, parsed.Price, err)
 	}
 	if price == 0 {
 		return models.RawPrice{}, fmt.Errorf("%w: twelve_data returned zero price for %q", ErrNoData, symbol)

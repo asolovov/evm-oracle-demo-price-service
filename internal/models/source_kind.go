@@ -12,9 +12,10 @@ import (
 // DB column values, the `source` field on proto messages).
 type SourceKind int
 
+// SourceKind enum values. SourceUnknown is the zero value and is always
+// rejected at boundaries; the remaining values map 1:1 to the adapter
+// packages under internal/sources/.
 const (
-	// SourceUnknown is the zero value; a SourceKind that compares equal to
-	// SourceUnknown is unset or unrecognised. Always rejected at boundaries.
 	SourceUnknown SourceKind = iota
 	SourceCoinGecko
 	SourceBinance
@@ -81,13 +82,15 @@ func (s SourceKind) AssetClass() AssetClass {
 		return AssetClassCrypto
 	case SourceAlphaVantage, SourceTwelveData, SourceStooq:
 		return AssetClassRWA
+	case SourceUnknown:
+		return AssetClassUnknown
 	default:
 		return AssetClassUnknown
 	}
 }
 
 // SourceKindFromString parses the canonical wire representation. Returns
-// SourceUnknown + ErrUnknownSourceKind for unrecognised input.
+// SourceUnknown + ErrUnknownSourceKind for unrecognized input.
 func SourceKindFromString(s string) (SourceKind, error) {
 	if k, ok := sourceKindByString[s]; ok {
 		return k, nil

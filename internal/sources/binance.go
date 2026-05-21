@@ -26,7 +26,7 @@ type Binance struct {
 func NewBinance(cfg config.SourceConfig) (Adapter, error) {
 	timeout, err := time.ParseDuration(cfg.Timeout)
 	if err != nil {
-		return nil, fmt.Errorf("%w: binance.timeout: %v", ErrConfig, err)
+		return nil, fmt.Errorf("%w: binance.timeout: %w", ErrConfig, err)
 	}
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("%w: binance.base_url is required", ErrConfig)
@@ -54,7 +54,7 @@ type binanceTicker struct {
 // Fetch retrieves the latest price for symbol (e.g. ETHUSDT).
 func (b *Binance) Fetch(ctx context.Context, symbol string) (models.RawPrice, error) {
 	if err := b.acquireToken(ctx); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: rate-limit wait: %w", ErrUpstream, err)
 	}
 
 	q := url.Values{}
@@ -62,20 +62,20 @@ func (b *Binance) Fetch(ctx context.Context, symbol string) (models.RawPrice, er
 	endpoint := fmt.Sprintf("%s/api/v3/ticker/price?%s", b.baseURL, q.Encode())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: build request: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: build request: %w", ErrUpstream, err)
 	}
 	req.Header.Set("Accept", "application/json")
 
 	now := time.Now().UTC()
 	resp, err := b.httpClient.Do(req)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: %w", ErrUpstream, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: read body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: read body: %w", ErrUpstream, err)
 	}
 	// 400 with code -1121 means "Invalid symbol" — treat as ErrNoData.
 	if resp.StatusCode == http.StatusBadRequest {
@@ -87,14 +87,14 @@ func (b *Binance) Fetch(ctx context.Context, symbol string) (models.RawPrice, er
 
 	var t binanceTicker
 	if err := json.Unmarshal(body, &t); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: decode body: %v", ErrUpstream, err)
+		return models.RawPrice{}, fmt.Errorf("%w: decode body: %w", ErrUpstream, err)
 	}
 	if t.Price == "" {
 		return models.RawPrice{}, fmt.Errorf("%w: binance returned empty price for %q", ErrNoData, symbol)
 	}
 	price, err := strconv.ParseFloat(t.Price, 64)
 	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: parse price %q: %v", ErrUpstream, t.Price, err)
+		return models.RawPrice{}, fmt.Errorf("%w: parse price %q: %w", ErrUpstream, t.Price, err)
 	}
 	if price == 0 {
 		return models.RawPrice{}, fmt.Errorf("%w: binance returned zero price for %q", ErrNoData, symbol)

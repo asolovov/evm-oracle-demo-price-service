@@ -78,7 +78,6 @@ func New(cfg config.AggregationConfig, reg SourceRegistry, repo repository.Price
 //   - any other error — transport / repository failure that prevents the
 //     round from completing. The caller (scheduler) logs and moves on.
 //
-//nolint:gocyclo // explicit per-stage error handling outweighs decomposition.
 func (a *Aggregator) RunOnce(ctx context.Context, asset models.Asset) (models.AggregatedPrice, error) {
 	policy, err := models.FreshnessPolicyFromString(a.cfg.FreshnessPolicy)
 	if err != nil || !policy.IsValid() {

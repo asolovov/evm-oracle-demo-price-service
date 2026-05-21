@@ -75,7 +75,7 @@ func TestModuleLifecycle(t *testing.T) {
 func TestModuleHealthCheckBeforeInit(t *testing.T) {
 	mod := NewModule(testGRPCConfig(), aggregator.NewBus(4), stubRepo{})
 	if err := mod.HealthCheck(context.Background()); err == nil {
-		t.Fatalf("HealthCheck should fail with 'not initialised' before Init")
+		t.Fatalf("HealthCheck should fail with 'not initialized' before Init")
 	}
 }
 

@@ -16,8 +16,9 @@ import (
 // StaleAfterRWA) are dropped from the median and tagged included=false.
 type FreshnessPolicy int
 
+// FreshnessPolicy enum values. FreshnessUnknown is the zero value and is
+// always rejected at boundaries.
 const (
-	// FreshnessUnknown is the zero value. Always rejected at boundaries.
 	FreshnessUnknown FreshnessPolicy = iota
 	FreshnessPermissive
 	FreshnessStrict

@@ -85,7 +85,7 @@ func (m *Module) Stop(_ context.Context) error {
 // HealthCheck verifies the server is running.
 func (m *Module) HealthCheck(_ context.Context) error {
 	if m.server == nil {
-		return fmt.Errorf("grpc server not initialised")
+		return fmt.Errorf("grpc server not initialized")
 	}
 	if !m.server.IsRunning() {
 		return fmt.Errorf("grpc server not running")

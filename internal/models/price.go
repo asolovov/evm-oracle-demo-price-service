@@ -18,7 +18,7 @@ type RawPrice struct {
 	FetchedAt        time.Time // when we hit the source
 	SourceObservedAt time.Time // upstream-reported timestamp
 	// RawPayload is the verbatim upstream response, kept for forensic replay.
-	// Adapters serialise to compact JSON before persisting.
+	// Adapters serialize to compact JSON before persisting.
 	RawPayload []byte
 }
 

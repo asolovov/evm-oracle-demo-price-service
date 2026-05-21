@@ -32,7 +32,7 @@ func NewServer(cfg *config.GRPCConfig) (*Server, error) {
 		return nil, fmt.Errorf("parse timeout: %w", err)
 	}
 
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp", addr) //nolint:noctx // listener bind has no context surface
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}

@@ -234,6 +234,23 @@ and apply to every Go service in the family:
 
 ---
 
+## Test coverage
+
+`make test` runs the unit tests; `make test-integration` runs the
+Postgres-backed repository round-trip behind a docker daemon.
+
+| Package                     | Coverage | Notes                                                                 |
+|-----------------------------|----------|-----------------------------------------------------------------------|
+| `internal/aggregator`       | 94.6 %   | Median, deviation guard, freshness policy, fan-out, persist, bus.     |
+| `internal/grpc`             | 94.9 %   | Server lifecycle, interceptors (logging + panic recovery).            |
+| `internal/grpc/handlers`    | 87.8 %   | `GetPrice` mappings, `Subscribe` snapshot + live tail + filter.       |
+| `internal/healthz`          | 92.7 %   | `/healthz` + `/readyz` aggregation behaviour.                         |
+| `internal/models`           | 87.5 %   | Enum round-trips, validation, proto<->domain conversions.             |
+| `internal/sources`          | 70.8 %   | All six adapters covered via `httptest` (happy + main failure modes). |
+| `internal/repository`       | integration | Postgres round-trip via `testcontainers-go` behind `-tags=integration`. |
+
+`make lint` passes clean (golangci-lint v2 schema).
+
 ## Known gaps
 
 These are deliberately deferred for the demo scope. Each is straightforward
@@ -247,13 +264,13 @@ follow-up work; flagged here so the gap is visible to reviewers.
   pass through `internal/aggregator/aggregator.go`.
 - **OpenTelemetry traces are not wired.** Spans around source calls and
   aggregation passes are the natural next addition.
-- **Repository tests use no `testcontainers-go`.** Aggregator + models +
-  one adapter (coingecko) have unit tests; the integration test that
-  exercises a real Postgres + full refresh cycle is left for follow-up.
 - **logrus, not zerolog.** Task spec preferred zerolog with JSON output in
   prod; the template ships logrus, and swapping would have touched every
   log site for marginal benefit on a demo. The
   `TELEMETRY_LOG_FORMAT=json` env knob still produces structured JSON.
+- **`docker compose up` smoke test** not executed end-to-end in CI yet.
+  The compose file boots Postgres → migrate → service and pins every
+  image version; the cold-start happy-path script is left for follow-up.
 
 ## Production gaps
 
