@@ -5,25 +5,22 @@ import (
 	"fmt"
 
 	"github.com/asolovov/evm-oracle-demo-price-service/config"
-	"github.com/asolovov/evm-oracle-demo-price-service/internal/grpc/handlers"
-	"github.com/asolovov/evm-oracle-demo-price-service/internal/service"
 	"github.com/asolovov/evm-oracle-demo-price-service/pkg/logger"
-	proto "github.com/asolovov/evm-oracle-demo-price-service/protocols/userservice"
 )
 
-// Module implements module.Module interface for gRPC server.
+// Module owns the lifecycle of the gRPC server.
+//
+// The price.v1.PriceService handler is registered in task 10; for now this
+// module just stands up the server framework + the standard gRPC health
+// service so docker compose health checks work end-to-end.
 type Module struct {
-	config  *config.GRPCConfig
-	service service.IService
-	server  *Server
+	config *config.GRPCConfig
+	server *Server
 }
 
 // NewModule creates a new gRPC module instance.
-func NewModule(cfg *config.GRPCConfig, svc service.IService) *Module {
-	return &Module{
-		config:  cfg,
-		service: svc,
-	}
+func NewModule(cfg *config.GRPCConfig) *Module {
+	return &Module{config: cfg}
 }
 
 // Name returns the module identifier.
@@ -31,7 +28,7 @@ func (m *Module) Name() string {
 	return "grpc"
 }
 
-// Init initializes the gRPC module.
+// Init starts the listener and registers the standard health service.
 func (m *Module) Init(_ context.Context) error {
 	logger.Log().Infof("initializing %s module on %s:%d", m.Name(), m.config.Host, m.config.Port)
 
@@ -43,10 +40,6 @@ func (m *Module) Init(_ context.Context) error {
 
 	if err := m.server.RegisterHealthService(); err != nil {
 		return fmt.Errorf("register health service: %w", err)
-	}
-
-	if err := m.registerHandlers(); err != nil {
-		return fmt.Errorf("register handlers: %w", err)
 	}
 
 	logger.Log().Infof("%s module initialized successfully", m.Name())
@@ -70,35 +63,26 @@ func (m *Module) Start(_ context.Context) error {
 // Stop gracefully shuts down the gRPC server.
 func (m *Module) Stop(_ context.Context) error {
 	logger.Log().Infof("stopping %s module", m.Name())
-
 	if m.server != nil {
 		m.server.GracefulStop()
 		logger.Log().Info("grpc server stopped gracefully")
 	}
-
 	return nil
 }
 
-// HealthCheck verifies gRPC server health.
+// HealthCheck verifies the server is running.
 func (m *Module) HealthCheck(_ context.Context) error {
 	if m.server == nil {
-		return fmt.Errorf("grpc server not initialized")
+		return fmt.Errorf("grpc server not initialised")
 	}
-
 	if !m.server.IsRunning() {
 		return fmt.Errorf("grpc server not running")
 	}
-
 	return nil
 }
 
-// registerHandlers registers all gRPC service handlers with the server.
-func (m *Module) registerHandlers() error {
-	// Create and register UserService handler
-	// logger.Log().Logger accesses the embedded *logrus.Logger
-	userServiceHandler := handlers.NewUserServiceHandler(m.service, logger.Log().Logger)
-	proto.RegisterUserServiceServer(m.server.Server(), userServiceHandler)
-
-	logger.Log().Info("grpc handlers registered successfully")
-	return nil
+// Server exposes the underlying gRPC server so handler-registration code
+// (added in task 10) can call e.g. pricev1.RegisterPriceServiceServer.
+func (m *Module) Server() *Server {
+	return m.server
 }
