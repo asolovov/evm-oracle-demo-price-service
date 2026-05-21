@@ -1,0 +1,16 @@
+# Generated proto files (should not be committed in protocols repo)
+*.pb.go
+*_grpc.pb.go
+
+# Buf cache
+.buf/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
