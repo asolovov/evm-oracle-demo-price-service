@@ -1,35 +1,33 @@
-# Set APP to the name of the application
-APP:=microservice-template
+# evm-oracle-demo-price-service Makefile.
+#
+# Build, codegen, migration, and lint targets. The deployment story is
+# `docker run <image>` with env vars — see Dockerfile + docker-compose.yml.
 
-# Set APP_ENTRY_POINT to the main Go file for the application
-APP_ENTRY_POINT:=cmd/microservice-template.go
+APP            := price-service
+APP_ENTRY_POINT := cmd/server/main.go
+BUILD_OUT_DIR  := ./bin
 
-# Set BUILD_OUT_DIR to the directory where the built executable should be placed
-BUILD_OUT_DIR:=./
+# Pinned codegen tool versions (architecture rule 9 — never @latest).
+BUF_VERSION              := v1.55.0
+PROTOC_GEN_GO_VERSION    := v1.36.0
+PROTOC_GEN_GO_GRPC_VERSION := v1.5.1
+GOLANG_MIGRATE_VERSION   := v4.18.1
+GOLANGCI_LINT_VERSION    := v1.63.4
 
-# path to version package
-GITVER_PKG:=microservice-template/pkg/version
+# Go build variables.
+GOOS   := $(shell go env GOOS)
+GOARCH := $(shell go env GOARCH)
 
-# Set GOOS and GOARCH to the current system values using the go env command
-GOOS=$(shell go env GOOS)
-GOARCH=$(shell go env GOARCH)
+# Version embedding (best-effort; tolerate missing tags / detached HEAD).
+GITVER_PKG := github.com/asolovov/evm-oracle-demo-price-service/pkg/version
+TAG        := $(shell git describe --abbrev=0 --tags 2>/dev/null || true)
+COMMIT     := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+BRANCH     := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+REMOTE     := $(shell git config --get remote.origin.url 2>/dev/null || echo unknown)
+BUILD_DATE := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
+RELEASE    := $(if $(TAG),$(TAG),$(COMMIT))
 
-# set git related vars for versioning (tolerate repos without tags)
-TAG 		:= $(shell git describe --abbrev=0 --tags 2>/dev/null || true)
-COMMIT		:= $(shell git rev-parse HEAD)
-BRANCH		?= $(shell git rev-parse --abbrev-ref HEAD)
-REMOTE		:= $(shell git config --get remote.origin.url)
-BUILD_DATE	:= $(shell date +'%Y-%m-%dT%H:%M:%SZ%Z')
-
-# Set RELEASE to either the current TAG or COMMIT
-RELEASE :=
-ifeq ($(TAG),)
-	RELEASE := $(COMMIT)
-else
-	RELEASE := $(TAG)
-endif
-
-# append versioner vars to ldflags
+LDFLAGS := -w -s
 LDFLAGS += -X $(GITVER_PKG).ServiceName=$(APP)
 LDFLAGS += -X $(GITVER_PKG).CommitTag=$(TAG)
 LDFLAGS += -X $(GITVER_PKG).CommitSHA=$(COMMIT)
@@ -38,310 +36,133 @@ LDFLAGS += -X $(GITVER_PKG).OriginURL=$(REMOTE)
 LDFLAGS += -X $(GITVER_PKG).BuildDate=$(BUILD_DATE)
 LDFLAGS += -X $(GITVER_PKG).Release=$(RELEASE)
 
-# The all target runs the tidy, build, and test targets
-all: tidy build test
-
-# The tidy target runs go mod tidy
-tidy:
-	go mod tidy
-
-# The update target runs go get -u
-update:
-	go get -u ./...
-
-# Migration configuration
-MIGRATIONS_DIR := ./db/migrations
-
-# Default database connection values (override via env vars)
-DATABASE_HOST ?= localhost
-DATABASE_PORT ?= 5432
-DATABASE_USER ?= dev
-DATABASE_PASSWORD ?= dev
-DATABASE_NAME ?= microservice_dev
+# Migration configuration.
+MIGRATIONS_DIR := ./migrations
+DATABASE_HOST     ?= localhost
+DATABASE_PORT     ?= 5432
+DATABASE_USER     ?= price_user
+DATABASE_PASSWORD ?= price_pass
+DATABASE_NAME     ?= evm_price
 DATABASE_SSL_MODE ?= disable
-
-# Construct DATABASE_URL from parts
 DATABASE_URL := postgres://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_HOST):$(DATABASE_PORT)/$(DATABASE_NAME)?sslmode=$(DATABASE_SSL_MODE)
 
-.PHONY: migrate-install
-migrate-install:
-	@which migrate > /dev/null || (echo "Installing golang-migrate..." && go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest)
+# Proto configuration.
+PROTO_DIR := ./protocols
 
-.PHONY: migrate-create
-migrate-create:
-ifndef NAME
-	@echo "Error: NAME parameter is required"
-	@echo "Usage: make migrate-create NAME=add_user_roles"
-	@exit 1
-endif
-	@migrate create -ext sql -dir $(MIGRATIONS_DIR) -seq $(NAME)
-	@echo "Created migration files in $(MIGRATIONS_DIR)/"
+.PHONY: all
+all: tidy generate build test ## Tidy modules, generate proto stubs, build, and test.
 
-.PHONY: migrate-up
-migrate-up:
-	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" up
-	@echo "Migrations applied successfully"
+.PHONY: help
+help: ## Show available targets.
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-.PHONY: migrate-down
-migrate-down:
-	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" down 1
-	@echo "Last migration rolled back"
+.PHONY: tidy
+tidy: ## Run go mod tidy.
+	go mod tidy
 
-.PHONY: migrate-force
-migrate-force:
-ifndef VERSION
-	@echo "Error: VERSION parameter is required"
-	@echo "Usage: make migrate-force VERSION=2"
-	@exit 1
-endif
-	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" force $(VERSION)
-	@echo "Migration version forced to $(VERSION)"
+.PHONY: update
+update: ## Update all dependencies.
+	go get -u ./...
 
-.PHONY: migrate-version
-migrate-version:
-	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" version
+# -------- Codegen --------
 
-.PHONY: migrate-drop
-migrate-drop:
-	@echo "WARNING: This will drop all tables! Press Ctrl+C to cancel, Enter to continue..."
-	@read _
-	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" drop -f
-	@echo "All migrations dropped"
+.PHONY: tools
+tools: buf-install protoc-install migrate-install lint-install ## Install all pinned dev tools.
 
-# The run target runs the application with race detection enabled
-run:
-	GODEBUG=xray_ptrace=1 go run -race $(APP_ENTRY_POINT) serve
+.PHONY: buf-install
+buf-install: ## Install buf at the pinned version.
+	@which buf >/dev/null && buf --version 2>/dev/null | grep -q '$(BUF_VERSION:v%=%)' \
+		|| (echo "Installing buf $(BUF_VERSION)..." && go install github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION))
 
-# The build target builds the application for the current system
-build:
-	env CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-w -s ${LDFLAGS}" -o $(BUILD_OUT_DIR)/$(APP) $(APP_ENTRY_POINT)
+.PHONY: protoc-install
+protoc-install: ## Install pinned protoc-gen-go and protoc-gen-go-grpc.
+	@echo "Installing protoc-gen-go $(PROTOC_GEN_GO_VERSION)..."
+	@go install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
+	@echo "Installing protoc-gen-go-grpc $(PROTOC_GEN_GO_GRPC_VERSION)..."
+	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
 
-# The test target runs go test
-test:
+.PHONY: generate
+generate: buf-install protoc-install ## Generate Go stubs into ./internal/genproto/ (gitignored).
+	@echo "Generating proto stubs into ./internal/genproto/..."
+	@mkdir -p internal/genproto
+	@buf generate --template buf.gen.yaml
+	@echo "Proto generation complete."
+
+.PHONY: generate-clean
+generate-clean: ## Remove the generated proto tree.
+	@rm -rf internal/genproto
+
+# -------- Build / Test --------
+
+.PHONY: build
+build: generate ## Build the application binary into $(BUILD_OUT_DIR).
+	@mkdir -p $(BUILD_OUT_DIR)
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) \
+		go build -ldflags="$(LDFLAGS)" -o $(BUILD_OUT_DIR)/$(APP) $(APP_ENTRY_POINT)
+
+.PHONY: run
+run: ## Run the application locally with race detection.
+	go run -race $(APP_ENTRY_POINT) serve
+
+.PHONY: test
+test: generate ## Run all tests.
 	go test ./...
 
-.PHONY: test-with-gen
-test-with-gen: generate-all test
-
-# gRPC integration tests (runs only gRPC package tests, including integration)
-.PHONY: test-grpc
-test-grpc:
-	go test ./internal/grpc -count=1
-
-# The clean target deletes the build output file
-clean:
-	rm $(BUILD_OUT_DIR)/$(APP)
-
-# Docker Compose helpers
-.PHONY: compose-up
-compose-up:
-	docker-compose up -d
-
-.PHONY: compose-down
-compose-down:
-	docker-compose down
-
-.PHONY: compose-restart
-compose-restart:
-	docker-compose down
-	docker-compose up -d
-
-# The test-coverage target runs go test with coverage enabled and generates a coverage report
-test-coverage:
+.PHONY: test-coverage
+test-coverage: generate ## Run tests with coverage report.
 	go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out
 
-# The lint target runs golangci-lint to check for common style and code quality issues
-lint:
+.PHONY: clean
+clean: generate-clean ## Remove build artefacts and generated code.
+	@rm -rf $(BUILD_OUT_DIR)
+
+# -------- Lint --------
+
+.PHONY: lint
+lint: generate ## Run golangci-lint.
 	golangci-lint run ./...
 
-.PHONY: lint-with-gen
-lint-with-gen: generate-all lint
+.PHONY: lint-install
+lint-install: ## Install golangci-lint at the pinned version.
+	@which golangci-lint >/dev/null \
+		|| (echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..." \
+		&& go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION))
 
-# The lint-install target installs golangci-lint if not already installed
-lint-install:
-	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+# -------- Migrations --------
 
-# Protobuf configuration
-PROTO_DIR := ./protocols
-PROTO_REPO ?= https://github.com/andskur/protocols-template.git
-PROTO_BRANCH ?= main
+.PHONY: migrate-install
+migrate-install: ## Install golang-migrate at the pinned version.
+	@which migrate >/dev/null \
+		|| (echo "Installing golang-migrate $(GOLANG_MIGRATE_VERSION)..." \
+		&& go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@$(GOLANG_MIGRATE_VERSION))
 
-.PHONY: proto-install
-proto-install:
-	@which protoc > /dev/null || (echo "Error: protoc not installed. Visit https://grpc.io/docs/protoc-installation/" && exit 1)
-	@echo "Installing protoc-gen-go and protoc-gen-go-grpc..."
-	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-	@echo "Proto tools installed successfully"
-
-.PHONY: buf-install
-buf-install:
-	@which buf > /dev/null || (echo "Installing Buf..." && go install github.com/bufbuild/buf/cmd/buf@latest)
-	@echo "Buf installed successfully"
-
-.PHONY: proto-setup
-proto-setup:
-ifndef PROTO_REPO
-	@echo "Error: PROTO_REPO parameter is required"
-	@echo "Usage: make proto-setup PROTO_REPO=git@github.com:andskur/protocols-template.git"
-	@echo "   or: make proto-setup PROTO_REPO=https://github.com/andskur/protocols-template.git"
+.PHONY: migrate-create
+migrate-create: ## Create migration files. Usage: make migrate-create NAME=add_thing.
+ifndef NAME
+	@echo "Error: NAME parameter is required. Usage: make migrate-create NAME=add_thing"
 	@exit 1
 endif
-	@echo "Adding protobuf subtree from $(PROTO_REPO)..."
-	@git subtree add --prefix=$(PROTO_DIR) $(PROTO_REPO) $(PROTO_BRANCH) --squash
-	@echo "Subtree added successfully"
+	@migrate create -ext sql -dir $(MIGRATIONS_DIR) -seq $(NAME)
 
-.PHONY: proto-update
-proto-update:
-	@echo "Updating protobuf subtree from $(PROTO_REPO)..."
-	@git subtree pull --prefix=$(PROTO_DIR) $(PROTO_REPO) $(PROTO_BRANCH) --squash
-	@echo "Subtree updated successfully"
+.PHONY: migrate-up
+migrate-up: ## Apply all up migrations.
+	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" up
 
-.PHONY: proto-generate
-proto-generate:
-ifndef PROTO_PACKAGE
-	@echo "Error: PROTO_PACKAGE parameter is required"
-	@echo "Usage: make proto-generate PROTO_PACKAGE=user"
-	@echo "This will generate Go code from $(PROTO_DIR)/user/*.proto"
-	@exit 1
-endif
-	@test -d $(PROTO_DIR)/$(PROTO_PACKAGE) || (echo "Error: $(PROTO_DIR)/$(PROTO_PACKAGE) directory not found" && exit 1)
-	@echo "Generating Go code from $(PROTO_DIR)/$(PROTO_PACKAGE)/*.proto..."
-	@cd $(PROTO_DIR)/$(PROTO_PACKAGE) && \
-		protoc --go_out=paths=source_relative:. \
-		       --go_opt=paths=source_relative \
-		       --go-grpc_out=paths=source_relative:. \
-		       --go-grpc_opt=paths=source_relative \
-		       *.proto
-	@echo "Proto generation complete for $(PROTO_PACKAGE)"
+.PHONY: migrate-down
+migrate-down: ## Roll back the most recent migration.
+	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" down 1
 
-.PHONY: proto-generate-all
-proto-generate-all:
-	@test -d $(PROTO_DIR) || (echo "Error: $(PROTO_DIR) directory not found" && exit 1)
-	@echo "Generating Go code from all proto packages under $(PROTO_DIR)..."
-	@cd $(PROTO_DIR) && find . -type f -name '*.proto' -print0 | xargs -0 -n1 dirname | sort -u | while read -r dir; do \
-		cd "$$dir" && \
-		protoc --go_out=paths=source_relative:. \
-		       --go_opt=paths=source_relative \
-		       --go-grpc_out=paths=source_relative:. \
-		       --go-grpc_opt=paths=source_relative \
-		       *.proto; \
-	done
-	@echo "Proto generation complete for all packages"
+.PHONY: migrate-version
+migrate-version: ## Print current migration version.
+	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" version
 
-.PHONY: buf-lint
-buf-lint:
-	@test -d $(PROTO_DIR) || (echo "Error: $(PROTO_DIR) directory not found" && exit 1)
-	@cd $(PROTO_DIR) && buf lint
+# -------- Docker Compose --------
 
-.PHONY: buf-breaking
-buf-breaking:
-	@test -d $(PROTO_DIR) || (echo "Error: $(PROTO_DIR) directory not found" && exit 1)
-	@cd $(PROTO_DIR) && buf breaking --against '.git#branch=main'
+.PHONY: compose-up
+compose-up: ## Start local Postgres + service via docker-compose.
+	docker-compose up -d
 
-.PHONY: buf-generate
-buf-generate:
-ifndef PROTO_PACKAGE
-	@echo "Error: PROTO_PACKAGE parameter is required"
-	@echo "Usage: make buf-generate PROTO_PACKAGE=user"
-	@exit 1
-endif
-	@test -d $(PROTO_DIR)/$(PROTO_PACKAGE) || (echo "Error: $(PROTO_DIR)/$(PROTO_PACKAGE) directory not found" && exit 1)
-	@cd $(PROTO_DIR)/$(PROTO_PACKAGE) && buf generate
-	@echo "Buf generation complete for $(PROTO_PACKAGE)"
-
-.PHONY: buf-generate-all
-buf-generate-all:
-	@test -d $(PROTO_DIR) || (echo "Error: $(PROTO_DIR) directory not found" && exit 1)
-	@cd $(PROTO_DIR) && buf generate
-	@echo "Buf generation complete for all packages"
-
-.PHONY: buf-validate
-buf-validate:
-	@test -d $(PROTO_DIR) || (echo "Error: $(PROTO_DIR) directory not found" && exit 1)
-	@cd $(PROTO_DIR) && buf lint && buf generate --template buf.gen.yaml --path . >/dev/null
-
-.PHONY: proto-clean
-proto-clean:
-	@echo "Cleaning generated proto files..."
-	@find $(PROTO_DIR) -name "*.pb.go" -type f -delete
-	@find $(PROTO_DIR) -name "*_grpc.pb.go" -type f -delete
-	@echo "Generated proto files removed"
-
-# Swagger/HTTP API targets
-.PHONY: swagger-install
-swagger-install:
-	@which swagger > /dev/null || (echo "Installing go-swagger..." && go install github.com/go-swagger/go-swagger/cmd/swagger@latest)
-	@echo "go-swagger installed successfully"
-
-.PHONY: swagger-validate
-swagger-validate:
-	@echo "Validating swagger specification..."
-	@swagger validate api/swagger.yaml
-	@echo "Swagger spec is valid"
-
-.PHONY: generate-api
-generate-api:
-	@echo "Generating API server from swagger spec..."
-	@swagger generate server \
-		-A $(APP)-api \
-		-P models.User \
-		--server-package server \
-		-f ./api/swagger.yaml \
-		--exclude-main \
-		--keep-spec-order \
-		--flag-strategy pflag \
-		--target ./internal/http \
-		--spec ./api/swagger.yaml
-	@echo "Tidying go modules..."
-	@go mod tidy
-	@echo "API generation complete"
-
-.PHONY: generate-all
-generate-all: proto-generate-all generate-api
-
-.PHONY: swagger-clean
-swagger-clean:
-	@echo "Cleaning generated swagger code..."
-	@rm -rf internal/http/server
-	@echo "Generated swagger code removed"
-
-.PHONY: test-http
-test-http:
-	@echo "Running HTTP module tests..."
-	@go test -v -race -count=1 ./internal/http/...
-
-# Template synchronization
-TEMPLATE_REMOTE_NAME := template
-TEMPLATE_REMOTE_URL ?= https://github.com/andskur/go-microservice-template.git
-TEMPLATE_BRANCH ?= main
-
-.PHONY: template-setup
-template-setup:
-	@bash scripts/template-sync.sh setup
-
-.PHONY: template-status
-template-status:
-	@bash scripts/template-sync.sh status
-
-.PHONY: template-fetch
-template-fetch:
-	@bash scripts/template-sync.sh fetch
-
-.PHONY: template-diff
-template-diff:
-	@bash scripts/template-sync.sh diff
-
-.PHONY: template-sync
-template-sync:
-	@bash scripts/template-sync.sh sync
-
-.PHONY: rename
-rename:
-ifndef NEW_NAME
-	@echo "Error: NEW_NAME parameter is required"
-	@echo "Usage: make rename NEW_NAME=my-new-service"
-	@exit 1
-endif
-	@bash scripts/rename.sh "$(NEW_NAME)"
+.PHONY: compose-down
+compose-down: ## Stop the local docker-compose stack.
+	docker-compose down

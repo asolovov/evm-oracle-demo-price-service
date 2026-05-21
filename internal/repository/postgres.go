@@ -5,8 +5,8 @@ import (
 
 	"github.com/go-pg/pg/v10"
 
-	"microservice-template/internal/models"
-	"microservice-template/pkg/logger"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/models"
+	"github.com/asolovov/evm-oracle-demo-price-service/pkg/logger"
 )
 
 // PostgresRepository is a PostgreSQL-based repository implementation using go-pg.

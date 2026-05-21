@@ -1,38 +1,51 @@
-# Use the latest version of Go as the base image
-FROM golang:1.24 AS base
+# syntax=docker/dockerfile:1.7
+#
+# Multi-stage build:
+#   1. builder — Go toolchain + pinned buf + protoc plugins; runs `make generate`
+#      then `make build` so proto stubs are regenerated from sources every build
+#      (architecture rule 9: generated code is never committed).
+#   2. runtime — distroless/static; non-root; just the binary + ca-certs.
+#
+# Final image target: < 30 MB.
 
-# Install needed dependencies for base image and update certs
-RUN apt-get update \
-  && apt-get install -y make openssh-client ca-certificates unzip \
-    && update-ca-certificates
+# ---- builder ----
+FROM golang:1.24-bookworm AS builder
 
-# create a build artifact
-FROM base AS builder
-# Set the working directory to the root of the project
-WORKDIR /app
+ENV CGO_ENABLED=0 \
+    GOFLAGS=-buildvcs=false \
+    PATH=/go/bin:/usr/local/go/bin:$PATH
 
-# Copy the Go dependencies file and download the dependencies
-COPY go.mod .
-COPY go.sum .
-RUN go mod download
+WORKDIR /src
 
-# Copy the Makefile and the rest of the source code
-COPY Makefile .
-COPY .git ./.git
-COPY . ./
+# Cache deps before pulling the full source tree.
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
-# Build the application
-RUN make build
+# Codegen tools pinned per Makefile (architecture rule 9 — never @latest).
+ARG BUF_VERSION=v1.55.0
+ARG PROTOC_GEN_GO_VERSION=v1.36.0
+ARG PROTOC_GEN_GO_GRPC_VERSION=v1.5.1
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    go install github.com/bufbuild/buf/cmd/buf@${BUF_VERSION} \
+    && go install google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION} \
+    && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@${PROTOC_GEN_GO_GRPC_VERSION}
 
-# Create a new, smaller image based on the scratch image (an empty, executable image)
-FROM scratch
+# Source last so changes don't bust the dep / tool layers above.
+COPY . .
 
-# Copy the SSL certificates from the base image
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# `make build` runs `make generate` first via Makefile dependency.
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    make build
 
-# Copy the built executable from the builder image
-COPY --from=builder /app/microservice-template /microservice-template
+# ---- runtime ----
+FROM gcr.io/distroless/static-debian12:nonroot
 
-# Set the entrypoint to the executable
-ENTRYPOINT ["/microservice-template"]
+COPY --from=builder /src/bin/price-service /usr/local/bin/price-service
+
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/price-service"]
 CMD ["serve"]
