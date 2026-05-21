@@ -34,10 +34,18 @@ import (
 	"github.com/asolovov/evm-oracle-demo-price-service/pkg/logger"
 )
 
+// SourceRegistry is the slice of the source registry the aggregator uses.
+// Pulled into an interface so tests can substitute a hand-rolled registry of
+// mock adapters without going through sources.NewRegistry. *sources.Registry
+// satisfies it.
+type SourceRegistry interface {
+	Get(models.SourceKind) (sources.Adapter, bool)
+}
+
 // Aggregator coordinates one aggregation pass per asset.
 type Aggregator struct {
 	cfg      config.AggregationConfig
-	registry *sources.Registry
+	registry SourceRegistry
 	repo     repository.PriceRepository
 	bus      *Bus
 
@@ -49,7 +57,7 @@ type Aggregator struct {
 }
 
 // New builds an Aggregator bound to a source registry, repository, and bus.
-func New(cfg config.AggregationConfig, reg *sources.Registry, repo repository.PriceRepository, bus *Bus) *Aggregator {
+func New(cfg config.AggregationConfig, reg SourceRegistry, repo repository.PriceRepository, bus *Bus) *Aggregator {
 	return &Aggregator{
 		cfg:       cfg,
 		registry:  reg,

@@ -18,18 +18,14 @@ import (
 // handler.
 type Module struct {
 	config *config.GRPCConfig
-	aggMod *aggregator.Module
+	bus    *aggregator.Bus
 	repo   repository.PriceRepository
 	server *Server
 }
 
 // NewModule wires the gRPC module with its handler dependencies.
-func NewModule(cfg *config.GRPCConfig, aggMod *aggregator.Module, repo repository.PriceRepository) *Module {
-	return &Module{
-		config: cfg,
-		aggMod: aggMod,
-		repo:   repo,
-	}
+func NewModule(cfg *config.GRPCConfig, bus *aggregator.Bus, repo repository.PriceRepository) *Module {
+	return &Module{config: cfg, bus: bus, repo: repo}
 }
 
 // Name returns the module identifier.
@@ -51,7 +47,7 @@ func (m *Module) Init(_ context.Context) error {
 		return fmt.Errorf("register health service: %w", err)
 	}
 
-	priceHandler := handlers.NewPriceServiceHandler(m.aggMod.Aggregator(), m.aggMod.Bus(), m.repo)
+	priceHandler := handlers.NewPriceServiceHandler(m.bus, m.repo)
 	pricev1.RegisterPriceServiceServer(m.server.Server(), priceHandler)
 	logger.Log().Info("registered price.v1.PriceService handler")
 

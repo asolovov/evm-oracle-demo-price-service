@@ -9,7 +9,6 @@ import (
 	"github.com/asolovov/evm-oracle-demo-price-service/config"
 	"github.com/asolovov/evm-oracle-demo-price-service/internal/models"
 	"github.com/asolovov/evm-oracle-demo-price-service/internal/repository"
-	"github.com/asolovov/evm-oracle-demo-price-service/internal/sources"
 	"github.com/asolovov/evm-oracle-demo-price-service/pkg/logger"
 )
 
@@ -32,7 +31,7 @@ type Module struct {
 func NewModule(
 	agg config.AggregationConfig,
 	assets []config.AssetConfig,
-	registry *sources.Registry,
+	registry SourceRegistry,
 	repo repository.PriceRepository,
 ) (*Module, error) {
 	parsed, err := parseAssets(assets)

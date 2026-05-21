@@ -105,8 +105,12 @@ run: ## Run the application locally with race detection.
 	go run -race $(APP_ENTRY_POINT) serve
 
 .PHONY: test
-test: generate ## Run all tests.
+test: generate ## Run unit tests.
 	go test ./...
+
+.PHONY: test-integration
+test-integration: generate ## Run integration tests (requires docker).
+	go test -tags=integration -count=1 ./...
 
 .PHONY: test-coverage
 test-coverage: generate ## Run tests with coverage report.

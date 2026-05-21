@@ -9,7 +9,7 @@
 # Final image target: < 30 MB.
 
 # ---- builder ----
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 ENV CGO_ENABLED=0 \
     GOFLAGS=-buildvcs=false \

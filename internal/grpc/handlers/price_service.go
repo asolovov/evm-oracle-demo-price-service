@@ -18,21 +18,18 @@ import (
 
 // PriceServiceHandler implements pricev1.PriceServiceServer.
 //
-// GetPrice tries the aggregator's in-memory cache first (last successful
-// tick per asset, surfaced via Aggregator.lastPrice). On miss it falls
-// through to the repository so callers can still read the most recent
-// persisted aggregation across restarts. Subscribe is a thin wrapper over
-// aggregator.Bus.
+// GetPrice reads the most recently persisted aggregation from the
+// repository. Subscribe pushes an initial per-asset snapshot from the
+// repository, then forwards live updates from the aggregator's Bus.
 type PriceServiceHandler struct {
 	pricev1.UnimplementedPriceServiceServer
-	agg  *aggregator.Aggregator
 	bus  *aggregator.Bus
 	repo repository.PriceRepository
 }
 
 // NewPriceServiceHandler wires a handler.
-func NewPriceServiceHandler(agg *aggregator.Aggregator, bus *aggregator.Bus, repo repository.PriceRepository) *PriceServiceHandler {
-	return &PriceServiceHandler{agg: agg, bus: bus, repo: repo}
+func NewPriceServiceHandler(bus *aggregator.Bus, repo repository.PriceRepository) *PriceServiceHandler {
+	return &PriceServiceHandler{bus: bus, repo: repo}
 }
 
 // GetPrice returns the most recent AggregatedPrice for one asset.

@@ -102,7 +102,7 @@ func (app *App) Init() error {
 	app.modules.Register(aggMod)
 
 	// 3. gRPC server.
-	grpcModule := grpcmod.NewModule(&app.config.GRPC, aggMod, repo)
+	grpcModule := grpcmod.NewModule(&app.config.GRPC, aggMod.Bus(), repo)
 	if err := grpcModule.Init(ctx); err != nil {
 		return fmt.Errorf("init grpc: %w", err)
 	}
