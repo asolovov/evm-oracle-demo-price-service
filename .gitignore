@@ -37,3 +37,9 @@ __debug_bin
 *.pb.go
 *_grpc.pb.go
 /internal/genproto/
+
+# Local-only E2E harness (task 05.1 — never committed). Re-derive from the
+# project's mimir task note on a fresh machine. .env.e2e is also matched
+# above by .env.* — listed here as defence in depth.
+/e2e/
+.env.e2e

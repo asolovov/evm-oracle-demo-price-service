@@ -121,6 +121,30 @@ test-coverage: generate ## Run tests with coverage report.
 clean: generate-clean ## Remove build artefacts and generated code.
 	@rm -rf $(BUILD_OUT_DIR)
 
+# -------- E2E (task 05.1) --------
+#
+# /e2e/ is gitignored — it's a local-only harness. The targets below
+# reference paths inside /e2e/ that only exist on a developer's machine.
+# Authoritative spec lives at projects/evm-oracle-demo/tasks/05.1-price-service-e2e.md
+# in the mimir vault; re-derive the directory contents from there on a
+# fresh clone.
+
+.PHONY: e2e-up
+e2e-up: ## Start the E2E docker-compose stack.
+	@docker compose --env-file .env.e2e -f e2e/docker-compose.e2e.yml up -d --build
+
+.PHONY: e2e-down
+e2e-down: ## Tear down the E2E docker-compose stack (drops volumes).
+	@docker compose --env-file .env.e2e -f e2e/docker-compose.e2e.yml down -v
+
+.PHONY: e2e-logs
+e2e-logs: ## Tail the price-service container logs.
+	@docker compose --env-file .env.e2e -f e2e/docker-compose.e2e.yml logs -f price-service
+
+.PHONY: test-e2e
+test-e2e: generate ## Run the full E2E suite (requires docker + .env.e2e).
+	go test -tags=e2e -count=1 -timeout 15m ./e2e/...
+
 # -------- Lint --------
 
 .PHONY: lint
