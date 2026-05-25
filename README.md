@@ -77,8 +77,11 @@ This service is **demo-grade** by design. See [Production gaps](#production-gaps
 | WTI   | RWA    | —                 | —            | —                                              | `WTI`         | `WTI/USD`   | `cl.f`   |
 | HG    | RWA    | —                 | —            | —                                              | `HG`          | `COPPER`    | `hg.f`   |
 
-Crypto refresh: 30 s · RWA refresh: 6 h (per spec NFR-02; free-tier
-ceilings make crypto-rate RWA polling impossible).
+Crypto refresh: 180 s · RWA refresh: 12 h. Sized to fit the binding
+free-tier ceilings over a 24 h window — Graph Gateway (~3 333 q/day
+across all crypto sources) and Alpha Vantage (25 req/day) — with margin
+for service restarts. Override via the per-asset `refresh_interval_sec`
+field if you're running with paid keys.
 
 ---
 

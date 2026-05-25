@@ -132,6 +132,15 @@ func TestRunOnceHappyPath(t *testing.T) {
 	if calls[0].Agg.MedianPrice != 3450.0 {
 		t.Fatalf("Agg.MedianPrice = %v, want 3450", calls[0].Agg.MedianPrice)
 	}
+	// Adapters return RawPrice without AssetID — the aggregator must stamp
+	// the id before PersistRound. Without this, prices_raw rows land with
+	// an empty asset_id and downstream queries can't find them. Catches the
+	// bug that the e2e DB cross-check originally uncovered.
+	for i, r := range calls[0].Raws {
+		if r.AssetID != asset.ID {
+			t.Fatalf("Raws[%d].AssetID = %q, want %q", i, r.AssetID, asset.ID)
+		}
+	}
 
 	// Bus publish.
 	select {

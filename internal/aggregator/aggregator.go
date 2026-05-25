@@ -201,6 +201,11 @@ func (a *Aggregator) fetchAll(ctx context.Context, asset models.Asset) ([]models
 			})
 			continue
 		}
+		// Adapters return a RawPrice without AssetID — they don't know which
+		// asset they were polled for (Fetch only sees a source-specific
+		// symbol). The aggregator owns the asset context, so it stamps the
+		// id here before the row goes to PersistRound.
+		r.raw.AssetID = asset.ID
 		raws = append(raws, r.raw)
 		contributions = append(contributions, models.SourceContribution{
 			Source:           r.kind,

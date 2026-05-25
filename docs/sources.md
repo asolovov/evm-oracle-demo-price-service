@@ -75,8 +75,10 @@ for transport / 5xx / decode, `ErrConfig` for constructor failures.
 - **Symbol shape:** Free-text symbol (`XAU`, `XAG`, `SPX`, `WTI`, `HG`).
 - **Free-tier rate limit:** 25 requests/day, 5/minute. Default
   `rate_limit=0.08` (4.8 req/min) with `burst=1`. The 25/day ceiling is
-  the real constraint — RWA polls every 6 h → 4 polls/asset/day × 5 RWA
-  assets = 20/day, leaving headroom.
+  the real constraint — RWA polls every 12 h → 2 polls/asset/day × 5
+  RWA assets = 10/day, leaving ~60% budget for service restarts (each
+  restart fires an immediate first tick on Start before the cadence
+  resumes).
 - **Observation time:** `Last Refreshed` (FX) or `latest trading day`
   (Global Quote).
 - **Failure modes:** Alpha Vantage returns 200 OK with a top-level `Note`

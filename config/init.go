@@ -121,7 +121,10 @@ func setDefaults() {
 // adapter resolves token0/token1 from the pool.
 func defaultAssets() []map[string]interface{} {
 	return []map[string]interface{}{
-		// --- Crypto (refresh every 30s) ---
+		// --- Crypto (refresh every 180s) ---
+		// 5 crypto assets × 86400/180 = 2400 calls/day per source. Sized to
+		// fit the Graph Gateway 100 K/month (~3 333/day) free tier with
+		// headroom; CoinGecko and Binance free tiers are well above this.
 		{
 			"id":    "weth",
 			"class": "crypto",
@@ -130,7 +133,7 @@ func defaultAssets() []map[string]interface{} {
 				"binance":    "ETHUSDT",
 				"uniswap_v3": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640", // USDC/WETH 0.05%
 			},
-			"refresh_interval_sec": 30,
+			"refresh_interval_sec": 180,
 		},
 		{
 			"id":    "wbtc",
@@ -140,7 +143,7 @@ func defaultAssets() []map[string]interface{} {
 				"binance":    "WBTCUSDT",
 				"uniswap_v3": "0x99ac8ca7087fa4a2a1fb6357269965a2014abc35", // USDC/WBTC 0.3%
 			},
-			"refresh_interval_sec": 30,
+			"refresh_interval_sec": 180,
 		},
 		{
 			"id":    "link",
@@ -150,7 +153,7 @@ func defaultAssets() []map[string]interface{} {
 				"binance":    "LINKUSDT",
 				"uniswap_v3": "0xfad57d2039c21811c8f2b5d5b65308aa99d31559", // LINK/WETH 0.3%
 			},
-			"refresh_interval_sec": 30,
+			"refresh_interval_sec": 180,
 		},
 		{
 			"id":    "uni",
@@ -160,7 +163,7 @@ func defaultAssets() []map[string]interface{} {
 				"binance":    "UNIUSDT",
 				"uniswap_v3": "0x1d42064fc4beb5f8aaf85f4617ae8b3b5b8bd801", // UNI/WETH 0.3%
 			},
-			"refresh_interval_sec": 30,
+			"refresh_interval_sec": 180,
 		},
 		{
 			"id":    "aave",
@@ -170,9 +173,12 @@ func defaultAssets() []map[string]interface{} {
 				"binance":    "AAVEUSDT",
 				"uniswap_v3": "0x5ab53ee1d50eef2c1dd3d5402789cd27bb52c1bb", // AAVE/WETH 0.3%
 			},
-			"refresh_interval_sec": 30,
+			"refresh_interval_sec": 180,
 		},
-		// --- RWA (refresh every 6h) ---
+		// --- RWA (refresh every 12h) ---
+		// 5 RWA assets × 2 polls/day = 10 calls/day per source. Alpha Vantage
+		// free tier is 25 req/day; 12 h cadence leaves ~60% budget for
+		// service restarts (which trigger an immediate first tick on Start).
 		{
 			"id":    "xau",
 			"class": "rwa",
@@ -181,7 +187,7 @@ func defaultAssets() []map[string]interface{} {
 				"twelve_data":   "XAU/USD",
 				"stooq":         "xauusd",
 			},
-			"refresh_interval_sec": 6 * 60 * 60,
+			"refresh_interval_sec": 12 * 60 * 60,
 		},
 		{
 			"id":    "xag",
@@ -191,7 +197,7 @@ func defaultAssets() []map[string]interface{} {
 				"twelve_data":   "XAG/USD",
 				"stooq":         "xagusd",
 			},
-			"refresh_interval_sec": 6 * 60 * 60,
+			"refresh_interval_sec": 12 * 60 * 60,
 		},
 		{
 			"id":    "spx",
@@ -201,7 +207,7 @@ func defaultAssets() []map[string]interface{} {
 				"twelve_data":   "SPX",
 				"stooq":         "^spx",
 			},
-			"refresh_interval_sec": 6 * 60 * 60,
+			"refresh_interval_sec": 12 * 60 * 60,
 		},
 		{
 			"id":    "wti",
@@ -211,7 +217,7 @@ func defaultAssets() []map[string]interface{} {
 				"twelve_data":   "WTI/USD",
 				"stooq":         "cl.f",
 			},
-			"refresh_interval_sec": 6 * 60 * 60,
+			"refresh_interval_sec": 12 * 60 * 60,
 		},
 		{
 			"id":    "hg",
@@ -221,7 +227,7 @@ func defaultAssets() []map[string]interface{} {
 				"twelve_data":   "COPPER",
 				"stooq":         "hg.f",
 			},
-			"refresh_interval_sec": 6 * 60 * 60,
+			"refresh_interval_sec": 12 * 60 * 60,
 		},
 	}
 }
