@@ -25,7 +25,7 @@ const (
 )
 
 var freshnessStrings = [...]string{
-	FreshnessUnknown:    "unknown",
+	FreshnessUnknown: unknownLabel,
 	FreshnessPermissive: "permissive",
 	FreshnessStrict:     "strict",
 }
@@ -38,7 +38,7 @@ var freshnessByString = map[string]FreshnessPolicy{
 // String returns the canonical wire representation.
 func (p FreshnessPolicy) String() string {
 	if p < 0 || int(p) >= len(freshnessStrings) {
-		return "unknown"
+		return unknownLabel
 	}
 	return freshnessStrings[p]
 }

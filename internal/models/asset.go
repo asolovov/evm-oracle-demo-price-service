@@ -65,7 +65,7 @@ const (
 )
 
 var assetClassStrings = [...]string{
-	AssetClassUnknown: "unknown",
+	AssetClassUnknown: unknownLabel,
 	AssetClassCrypto:  "crypto",
 	AssetClassRWA:     "rwa",
 }
@@ -78,7 +78,7 @@ var assetClassByString = map[string]AssetClass{
 // String returns the canonical wire representation.
 func (c AssetClass) String() string {
 	if c < 0 || int(c) >= len(assetClassStrings) {
-		return "unknown"
+		return unknownLabel
 	}
 	return assetClassStrings[c]
 }

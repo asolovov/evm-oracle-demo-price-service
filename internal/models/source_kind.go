@@ -28,7 +28,7 @@ const (
 // sourceKindStrings is the canonical String() representation, indexed by the
 // SourceKind value. Order MUST match the iota block above.
 var sourceKindStrings = [...]string{
-	SourceUnknown:      "unknown",
+	SourceUnknown: unknownLabel,
 	SourceCoinGecko:    "coingecko",
 	SourceBinance:      "binance",
 	SourceUniswapV3:    "uniswap_v3",
@@ -63,7 +63,7 @@ func AllSources() []SourceKind {
 // String returns the canonical wire representation.
 func (s SourceKind) String() string {
 	if s < 0 || int(s) >= len(sourceKindStrings) {
-		return "unknown"
+		return unknownLabel
 	}
 	return sourceKindStrings[s]
 }
