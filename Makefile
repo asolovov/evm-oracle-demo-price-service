@@ -12,7 +12,7 @@ BUF_VERSION              := v1.55.0
 PROTOC_GEN_GO_VERSION    := v1.36.0
 PROTOC_GEN_GO_GRPC_VERSION := v1.5.1
 GOLANG_MIGRATE_VERSION   := v4.18.1
-GOLANGCI_LINT_VERSION    := v1.63.4
+GOLANGCI_LINT_VERSION    := v2.11.4
 
 # Go build variables.
 GOOS   := $(shell go env GOOS)
@@ -153,9 +153,12 @@ lint: generate ## Run golangci-lint.
 
 .PHONY: lint-install
 lint-install: ## Install golangci-lint at the pinned version.
+	# v2 lives at the /v2/ module path; without that, `go install` picks
+	# up the v1.x line, ignores our .golangci.yml version:"2" header,
+	# and runs against its own default linter set.
 	@which golangci-lint >/dev/null \
 		|| (echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..." \
-		&& go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION))
+		&& go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION))
 
 # -------- Migrations --------
 
