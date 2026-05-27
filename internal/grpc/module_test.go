@@ -3,86 +3,103 @@ package grpc
 import (
 	"context"
 	"testing"
+	"time"
 
-	"microservice-template/config"
+	"github.com/asolovov/evm-oracle-demo-price-service/config"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/aggregator"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/models"
 )
 
-func TestModule_Lifecycle(t *testing.T) {
-	cfg := &config.GRPCConfig{
-		Enabled:          true,
-		Host:             "127.0.0.1",
-		Port:             0,
-		Timeout:          "5s",
-		MaxSendMsgSize:   1024 * 1024,
-		MaxRecvMsgSize:   1024 * 1024,
-		NumStreamWorkers: 0,
-	}
+// stubRepo satisfies repository.PriceRepository for module-level lifecycle
+// tests. The gRPC module itself doesn't call any repo methods — the
+// dependency is forwarded to the handler — so a minimal stub is enough.
+type stubRepo struct{}
 
-	mod := NewModule(cfg, nil)
-	ctx := context.Background()
+func (stubRepo) PersistRound(_ context.Context, _ []models.RawPrice, _ models.AggregatedPrice) error {
+	return nil
+}
 
-	if err := mod.Init(ctx); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
+func (stubRepo) GetLatest(_ context.Context, _ models.AssetID) (models.AggregatedPrice, error) {
+	return models.AggregatedPrice{}, models.ErrAssetNotTracked
+}
 
-	if err := mod.Start(ctx); err != nil {
-		t.Fatalf("Start failed: %v", err)
-	}
+func (stubRepo) GetHistory(_ context.Context, _ models.AssetID, _, _ time.Time, _ int) ([]models.AggregatedPrice, error) {
+	return nil, nil
+}
 
-	if err := mod.HealthCheck(ctx); err != nil {
-		t.Errorf("HealthCheck failed: %v", err)
-	}
+func (stubRepo) Ping(_ context.Context) error { return nil }
 
-	if err := mod.Stop(ctx); err != nil {
-		t.Errorf("Stop failed: %v", err)
+func testGRPCConfig() *config.GRPCConfig {
+	return &config.GRPCConfig{
+		Host:           "127.0.0.1",
+		Port:           0,
+		Timeout:        "5s",
+		MaxSendMsgSize: 1024 * 1024,
+		MaxRecvMsgSize: 1024 * 1024,
+		Reflection:     true,
 	}
 }
 
-func TestModule_Name(t *testing.T) {
-	mod := NewModule(&config.GRPCConfig{}, nil)
-
+func TestModuleLifecycle(t *testing.T) {
+	bus := aggregator.NewBus(4)
+	mod := NewModule(testGRPCConfig(), bus, stubRepo{})
 	if mod.Name() != "grpc" {
-		t.Errorf("expected name 'grpc', got '%s'", mod.Name())
+		t.Fatalf("Name = %q, want grpc", mod.Name())
+	}
+
+	ctx := context.Background()
+	if err := mod.Init(ctx); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := mod.HealthCheck(ctx); err == nil {
+		t.Fatalf("HealthCheck should fail before Start (server not running)")
+	}
+	if err := mod.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() {
+		if err := mod.Stop(ctx); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+	}()
+
+	// Server() should expose the underlying *Server.
+	if mod.Server() == nil {
+		t.Fatalf("Server() returned nil after Init")
+	}
+	if err := mod.HealthCheck(ctx); err != nil {
+		t.Fatalf("HealthCheck after Start: %v", err)
 	}
 }
 
-func TestModule_Init_InvalidTimeout(t *testing.T) {
-	t.Parallel()
+func TestModuleHealthCheckBeforeInit(t *testing.T) {
+	mod := NewModule(testGRPCConfig(), aggregator.NewBus(4), stubRepo{})
+	if err := mod.HealthCheck(context.Background()); err == nil {
+		t.Fatalf("HealthCheck should fail with 'not initialized' before Init")
+	}
+}
 
-	mod := NewModule(&config.GRPCConfig{Enabled: true, Host: "127.0.0.1", Port: 0, Timeout: "bad"}, nil)
+func TestModuleStopBeforeInitIsNoop(t *testing.T) {
+	mod := NewModule(testGRPCConfig(), aggregator.NewBus(4), stubRepo{})
+	if err := mod.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop before Init should be a no-op, got %v", err)
+	}
+}
+
+func TestModuleInitFailsOnBadConfig(t *testing.T) {
+	bad := &config.GRPCConfig{Host: "127.0.0.1", Port: 0, Timeout: "not a duration"}
+	mod := NewModule(bad, aggregator.NewBus(4), stubRepo{})
 	if err := mod.Init(context.Background()); err == nil {
-		t.Fatalf("expected error for invalid timeout")
+		t.Fatalf("Init should fail on bad timeout config")
 	}
 }
 
-func TestModule_HealthCheck_NotInitialized(t *testing.T) {
-	t.Parallel()
-
-	mod := NewModule(&config.GRPCConfig{}, nil)
-	if err := mod.HealthCheck(context.Background()); err == nil {
-		t.Fatalf("expected error when server not initialized")
-	}
-}
-
-func TestModule_HealthCheck_NotRunning(t *testing.T) {
-	t.Parallel()
-
-	cfg := &config.GRPCConfig{Enabled: true, Host: "127.0.0.1", Port: 0, Timeout: "1s"}
-	mod := NewModule(cfg, nil)
+func TestModuleReflectionDisabled(t *testing.T) {
+	cfg := testGRPCConfig()
+	cfg.Reflection = false
+	mod := NewModule(cfg, aggregator.NewBus(4), stubRepo{})
 	if err := mod.Init(context.Background()); err != nil {
-		t.Fatalf("init error: %v", err)
+		t.Fatalf("Init with reflection=false: %v", err)
 	}
-
-	if err := mod.HealthCheck(context.Background()); err == nil {
-		t.Fatalf("expected error when server not running")
-	}
-}
-
-func TestModule_Stop_Idempotent(t *testing.T) {
-	t.Parallel()
-
-	cfg := &config.GRPCConfig{Enabled: true, Host: "127.0.0.1", Port: 0, Timeout: "1s"}
-	mod := NewModule(cfg, nil)
-	_ = mod.Stop(context.Background())
-	_ = mod.Stop(context.Background())
+	defer func() { _ = mod.Stop(context.Background()) }()
 }

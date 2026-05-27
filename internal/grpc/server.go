@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
 
-	"microservice-template/config"
-	"microservice-template/pkg/logger"
+	"github.com/asolovov/evm-oracle-demo-price-service/config"
+	"github.com/asolovov/evm-oracle-demo-price-service/pkg/logger"
 )
 
 // Server wraps gRPC server and listener.
@@ -32,7 +32,7 @@ func NewServer(cfg *config.GRPCConfig) (*Server, error) {
 		return nil, fmt.Errorf("parse timeout: %w", err)
 	}
 
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp", addr) //nolint:noctx // listener bind has no context surface
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}

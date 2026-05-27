@@ -3,26 +3,25 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
-	"github.com/go-pg/pg/v10"
+	"github.com/jackc/pgx/v5/pgxpool"
 
-	"microservice-template/config"
-	"microservice-template/pkg/logger"
+	"github.com/asolovov/evm-oracle-demo-price-service/config"
+	"github.com/asolovov/evm-oracle-demo-price-service/pkg/logger"
 )
 
-// Module implements module.Module interface for repository layer.
-// It manages database connection lifecycle and provides repository instances.
+// Module wraps the pgxpool lifecycle as an internal.Module so the application
+// can register it alongside the gRPC server, scheduler, and healthz modules.
 type Module struct {
 	config *config.DatabaseConfig
-	db     *pg.DB
-	repo   IRepository
+	pool   *pgxpool.Pool
+	repo   PriceRepository
 }
 
 // NewModule creates a new repository module instance.
 func NewModule(cfg *config.DatabaseConfig) *Module {
-	return &Module{
-		config: cfg,
-	}
+	return &Module{config: cfg}
 }
 
 // Name returns the module identifier.
@@ -30,69 +29,96 @@ func (m *Module) Name() string {
 	return "repository"
 }
 
-// Init initializes the repository module and establishes database connection.
-func (m *Module) Init(_ context.Context) error {
-	logger.Log().Infof("initializing %s module with driver: %s on %s:%d with user %s", m.Name(), m.config.Driver, m.config.Host, m.config.Port, m.config.User)
+// Init creates the pgxpool and verifies connectivity. Sensitive fields
+// (password) MUST NOT be logged — the prior template version did this; the
+// rewrite removes that.
+func (m *Module) Init(ctx context.Context) error {
+	logger.Log().Infof("initializing %s module on %s:%d as %s (db=%s)",
+		m.Name(), m.config.Host, m.config.Port, m.config.User, m.config.Name)
 
-	fmt.Println(m.config.User)
-	fmt.Println(m.config.Password)
-	fmt.Println(m.config.Name)
+	cfg, err := pgxpool.ParseConfig(m.dsn())
+	if err != nil {
+		return fmt.Errorf("repository.Init: parse pool config: %w", err)
+	}
+	if v := m.config.MaxOpenConns; v > 0 {
+		cfg.MaxConns = clampInt32(v)
+	}
+	if v := m.config.MaxIdleConns; v > 0 {
+		cfg.MinConns = clampInt32(v)
+	}
+	if m.config.ConnMaxLifetime > 0 {
+		cfg.MaxConnLifetime = time.Duration(m.config.ConnMaxLifetime) * time.Second
+	}
 
-	db := pg.Connect(&pg.Options{
-		Addr:         fmt.Sprintf("%s:%d", m.config.Host, m.config.Port),
-		User:         m.config.User,
-		Password:     m.config.Password,
-		Database:     m.config.Name,
-		PoolSize:     m.config.MaxOpenConns,
-		MinIdleConns: m.config.MaxIdleConns,
-	})
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("repository.Init: connect pool: %w", err)
+	}
+	m.pool = pool
+	m.repo = NewPostgres(pool)
 
-	m.db = db
-	m.repo = NewPostgresRepository(db)
-
-	if err := m.HealthCheck(context.Background()); err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil {
+		pool.Close()
+		m.pool = nil
+		return fmt.Errorf("repository.Init: ping: %w", err)
 	}
 
 	logger.Log().Infof("%s module initialized successfully", m.Name())
 	return nil
 }
 
-// Start begins module operation (no-op for repository).
+// Start is a no-op — the pool is ready after Init.
 func (m *Module) Start(_ context.Context) error {
-	logger.Log().Infof("starting %s module", m.Name())
 	return nil
 }
 
-// Stop gracefully shuts down the module and closes database connection.
+// Stop closes the pool.
 func (m *Module) Stop(_ context.Context) error {
 	logger.Log().Infof("stopping %s module", m.Name())
-
-	if m.db != nil {
-		if err := m.db.Close(); err != nil {
-			return fmt.Errorf("close database connection: %w", err)
-		}
-		logger.Log().Info("database connection closed")
+	if m.pool != nil {
+		m.pool.Close()
 	}
-
 	return nil
 }
 
-// HealthCheck verifies database connectivity.
+// HealthCheck verifies that the pool can still reach Postgres.
 func (m *Module) HealthCheck(ctx context.Context) error {
-	if m.db == nil {
-		return fmt.Errorf("database not initialized")
+	if m.pool == nil {
+		return fmt.Errorf("repository: pool not initialized")
 	}
-
-	if _, err := m.db.WithContext(ctx).Exec("SELECT 1"); err != nil {
-		return fmt.Errorf("database health check failed: %w", err)
-	}
-
-	return nil
+	return m.pool.Ping(ctx)
 }
 
-// Repository returns the repository instance.
-// This is used by other parts of the application (e.g., Service layer).
-func (m *Module) Repository() IRepository {
+// Repository returns the PriceRepository instance. Callers must invoke this
+// only AFTER Init; before that it returns nil.
+func (m *Module) Repository() PriceRepository {
 	return m.repo
+}
+
+// dsn builds the pgx connection string. SSLMode is honored per config; the
+// password is interpolated but never logged (see Init).
+func (m *Module) dsn() string {
+	return fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		m.config.User, m.config.Password,
+		m.config.Host, m.config.Port,
+		m.config.Name, m.config.SSLMode,
+	)
+}
+
+// clampInt32 narrows a config-supplied int to int32 with saturation,
+// avoiding gosec G115. Pool sizes are realistically two- or three-digit
+// values; the clamp exists so a misconfigured huge value cannot wrap to
+// a negative.
+func clampInt32(v int) int32 {
+	const maxInt32 = int(^uint32(0) >> 1)
+	if v > maxInt32 {
+		return int32(maxInt32)
+	}
+	if v < 0 {
+		return 0
+	}
+	return int32(v)
 }

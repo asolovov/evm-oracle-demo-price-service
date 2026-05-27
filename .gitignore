@@ -8,37 +8,38 @@
 # Test binary, built with `go test -c`
 *.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
+# Coverage outputs
 *.out
+coverage.out
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# Build artefacts
+/bin/
+price-service
 
+# IDE
 .idea/
-
+.vscode/
+*.swp
+*.swo
 __debug_bin
+.DS_Store
 
-microservice-template
-
-# Template synchronization metadata (only in downstream repos)
-.template-version
-
-# TODO: add any required ignore patterns here
-
-# Generated protobuf outputs (kept locally, not committed)
-*.pb.go
-*_grpc.pb.go
-
-# Generated swagger/HTTP API code (kept locally, not committed)
-internal/http/server/
-internal/http/models/
+# Secrets and local env. Never commit anything matching these.
+.env
+.env.*
+!.env.example
 
 # Local docker-compose data
 /data/
 
-.env
+# Architecture rule 9: generated proto code is never committed.
+# protocols/.gitignore also enforces this scoped to that subtree.
+*.pb.go
+*_grpc.pb.go
+/internal/genproto/
 
-local
-
-
-microservice-template
+# Local-only E2E harness (task 05.1 — never committed). Re-derive from the
+# project's mimir task note on a fresh machine. .env.e2e is also matched
+# above by .env.* — listed here as defence in depth.
+/e2e/
+.env.e2e

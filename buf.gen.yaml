@@ -1,0 +1,35 @@
+# Consumer-side buf codegen config.
+#
+# Generates Go stubs from the protos under protocols/ into ./internal/genproto/.
+# Output lives entirely inside this module's tree, so no `replace` directive is
+# needed and the protocols/ subtree stays proto-source-only (architecture rule
+# 9: no .go files in the protocols repo, ever).
+#
+# The Mfile=path overrides retarget every proto's `go_package` from
+#   github.com/asolovov/evm-oracle-demo-protocols/<pkg>/v1
+# to
+#   github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/<pkg>/v1
+# so the generated code's internal cross-package imports resolve inside this
+# module. Update this list when a new proto file lands upstream.
+version: v2
+plugins:
+  - remote: buf.build/protocolbuffers/go
+    out: ./internal/genproto
+    opt:
+      - paths=source_relative
+      - Mcommon/v1/errors.proto=github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/common/v1
+      - Mcommon/v1/pagination.proto=github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/common/v1
+      - Mprice/v1/price.proto=github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/price/v1
+      - Mindexer/v1/indexer.proto=github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/indexer/v1
+      - Moracle/v1/oracle.proto=github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/oracle/v1
+  - remote: buf.build/grpc/go
+    out: ./internal/genproto
+    opt:
+      - paths=source_relative
+      - Mcommon/v1/errors.proto=github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/common/v1
+      - Mcommon/v1/pagination.proto=github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/common/v1
+      - Mprice/v1/price.proto=github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/price/v1
+      - Mindexer/v1/indexer.proto=github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/indexer/v1
+      - Moracle/v1/oracle.proto=github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/oracle/v1
+inputs:
+  - directory: protocols

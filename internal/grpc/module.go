@@ -4,34 +4,36 @@ import (
 	"context"
 	"fmt"
 
-	"microservice-template/config"
-	"microservice-template/internal/grpc/handlers"
-	"microservice-template/internal/service"
-	"microservice-template/pkg/logger"
-	proto "microservice-template/protocols/userservice"
+	"google.golang.org/grpc/reflection"
+
+	"github.com/asolovov/evm-oracle-demo-price-service/config"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/aggregator"
+	pricev1 "github.com/asolovov/evm-oracle-demo-price-service/internal/genproto/price/v1"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/grpc/handlers"
+	"github.com/asolovov/evm-oracle-demo-price-service/internal/repository"
+	"github.com/asolovov/evm-oracle-demo-price-service/pkg/logger"
 )
 
-// Module implements module.Module interface for gRPC server.
+// Module owns the gRPC server lifecycle and registers the PriceService
+// handler.
 type Module struct {
-	config  *config.GRPCConfig
-	service service.IService
-	server  *Server
+	config *config.GRPCConfig
+	bus    *aggregator.Bus
+	repo   repository.PriceRepository
+	server *Server
 }
 
-// NewModule creates a new gRPC module instance.
-func NewModule(cfg *config.GRPCConfig, svc service.IService) *Module {
-	return &Module{
-		config:  cfg,
-		service: svc,
-	}
+// NewModule wires the gRPC module with its handler dependencies.
+func NewModule(cfg *config.GRPCConfig, bus *aggregator.Bus, repo repository.PriceRepository) *Module {
+	return &Module{config: cfg, bus: bus, repo: repo}
 }
 
 // Name returns the module identifier.
-func (m *Module) Name() string {
-	return "grpc"
-}
+func (m *Module) Name() string { return "grpc" }
 
-// Init initializes the gRPC module.
+// Init creates the listener, registers the standard health service, the
+// price.v1.PriceService handler, and (when enabled) server reflection for
+// grpcurl-driven debugging.
 func (m *Module) Init(_ context.Context) error {
 	logger.Log().Infof("initializing %s module on %s:%d", m.Name(), m.config.Host, m.config.Port)
 
@@ -45,8 +47,13 @@ func (m *Module) Init(_ context.Context) error {
 		return fmt.Errorf("register health service: %w", err)
 	}
 
-	if err := m.registerHandlers(); err != nil {
-		return fmt.Errorf("register handlers: %w", err)
+	priceHandler := handlers.NewPriceServiceHandler(m.bus, m.repo)
+	pricev1.RegisterPriceServiceServer(m.server.Server(), priceHandler)
+	logger.Log().Info("registered price.v1.PriceService handler")
+
+	if m.config.Reflection {
+		reflection.Register(m.server.Server())
+		logger.Log().Info("grpc server reflection enabled")
 	}
 
 	logger.Log().Infof("%s module initialized successfully", m.Name())
@@ -56,13 +63,11 @@ func (m *Module) Init(_ context.Context) error {
 // Start begins gRPC server operation (non-blocking).
 func (m *Module) Start(_ context.Context) error {
 	m.server.MarkRunning()
-
 	go func() {
 		if err := m.server.Serve(); err != nil {
 			logger.Log().Errorf("grpc server error: %v", err)
 		}
 	}()
-
 	logger.Log().Infof("grpc server listening on %s:%d", m.config.Host, m.config.Port)
 	return nil
 }
@@ -70,35 +75,23 @@ func (m *Module) Start(_ context.Context) error {
 // Stop gracefully shuts down the gRPC server.
 func (m *Module) Stop(_ context.Context) error {
 	logger.Log().Infof("stopping %s module", m.Name())
-
 	if m.server != nil {
 		m.server.GracefulStop()
 		logger.Log().Info("grpc server stopped gracefully")
 	}
-
 	return nil
 }
 
-// HealthCheck verifies gRPC server health.
+// HealthCheck verifies the server is running.
 func (m *Module) HealthCheck(_ context.Context) error {
 	if m.server == nil {
 		return fmt.Errorf("grpc server not initialized")
 	}
-
 	if !m.server.IsRunning() {
 		return fmt.Errorf("grpc server not running")
 	}
-
 	return nil
 }
 
-// registerHandlers registers all gRPC service handlers with the server.
-func (m *Module) registerHandlers() error {
-	// Create and register UserService handler
-	// logger.Log().Logger accesses the embedded *logrus.Logger
-	userServiceHandler := handlers.NewUserServiceHandler(m.service, logger.Log().Logger)
-	proto.RegisterUserServiceServer(m.server.Server(), userServiceHandler)
-
-	logger.Log().Info("grpc handlers registered successfully")
-	return nil
-}
+// Server exposes the underlying server for callers that need it.
+func (m *Module) Server() *Server { return m.server }
