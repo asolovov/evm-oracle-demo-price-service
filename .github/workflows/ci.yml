@@ -1,5 +1,8 @@
 name: CI
 
+# TODO(NFR-07): SHA-pin every third-party action before merging cross-team.
+# Left at major-version tags for now to land the workflow rewrite quickly.
+
 on:
   pull_request:
     branches: ["**"]
@@ -14,47 +17,18 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
+          cache: true
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+      - name: Install codegen + lint tools
+        run: make buf-install protoc-install lint-install
 
-      - name: Install dependencies
-        run: go mod download
-
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
-      - name: Install proto tools
-        run: make proto-install
-
-      - name: Generate protos
-        run: make proto-generate-all
-
-      - name: Install golangci-lint
-        run: make lint-install
-
-      - name: Install go-swagger
-        run: make swagger-install
-
-      - name: Validate Swagger spec
-        run: make swagger-validate
-
-      - name: Generate API code
-        run: make generate-api
+      - name: Generate proto stubs
+        run: make generate
 
       - name: Lint
         run: make lint
@@ -62,44 +36,18 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
+          cache: true
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+      - name: Install codegen tools
+        run: make buf-install protoc-install
 
-      - name: Install dependencies
-        run: go mod download
-
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
-      - name: Install proto tools
-        run: make proto-install
-
-      - name: Generate protos
-        run: make proto-generate-all
-
-      - name: Install go-swagger
-        run: make swagger-install
-
-      - name: Validate Swagger spec
-        run: make swagger-validate
-
-      - name: Generate API code
-        run: make generate-api
+      - name: Generate proto stubs
+        run: make generate
 
       - name: Test
         run: make test
@@ -107,41 +55,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
+          cache: true
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Install dependencies
-        run: go mod download
-
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
-      - name: Install proto tools
-        run: make proto-install
-
-      - name: Generate protos
-        run: make proto-generate-all
-
-      - name: Install go-swagger
-        run: make swagger-install
-
-      - name: Generate API code
-        run: make generate-api
+      - name: Install codegen tools
+        run: make buf-install protoc-install
 
       - name: Build
+        # `make build` depends on `make generate`, which the codegen tools above unblock.
         run: make build
