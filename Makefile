@@ -4,7 +4,7 @@
 # `docker run <image>` with env vars — see Dockerfile + docker-compose.yml.
 
 APP            := price-service
-APP_ENTRY_POINT := cmd/server/main.go
+APP_ENTRY_POINT := cmd/evm-oracle-demo-price-service.go
 BUILD_OUT_DIR  := ./bin
 
 # Pinned codegen tool versions (architecture rule 9 — never @latest).

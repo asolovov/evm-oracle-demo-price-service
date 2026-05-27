@@ -123,7 +123,7 @@ curl http://localhost:8080/readyz
 ```bash
 # 1. Start Postgres yourself (or use compose for just the db)
 make migrate-up
-make run        # equivalent to `go run -race cmd/server/main.go serve`
+make run        # equivalent to `go run -race cmd/evm-oracle-demo-price-service.go serve`
 ```
 
 ---
@@ -189,7 +189,7 @@ namespace so the protocols subtree stays proto-source-only).
 ## Project layout
 
 ```
-├── cmd/server/main.go        # cobra/viper entry (architecture rule 1)
+├── cmd/evm-oracle-demo-price-service.go   # cobra/viper entry (architecture rule 1)
 ├── config/                   # viper defaults + Scheme + Validate
 ├── internal/
 │   ├── application.go        # wires every module (architecture rule 2)
