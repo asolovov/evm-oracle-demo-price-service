@@ -13,6 +13,15 @@ type Registry struct {
 	adapters map[models.SourceKind]Adapter
 }
 
+// adapterSpec ties a config block to the SourceKind it registers and the
+// constructor that builds it. NewRegistry walks this table so adding a
+// source is one row, not another branch.
+type adapterSpec struct {
+	kind models.SourceKind
+	cfg  config.SourceConfig
+	ctor func(config.SourceConfig) (Adapter, error)
+}
+
 // NewRegistry constructs every enabled adapter from config. Returns
 // ErrConfig if a required adapter is enabled without its API key, or if a
 // constructor fails.
@@ -20,49 +29,30 @@ type Registry struct {
 // Disabled adapters are skipped silently — the aggregator copes with a
 // reduced source set as long as MinSources is satisfied.
 func NewRegistry(cfg config.SourcesConfig) (*Registry, error) {
-	r := &Registry{adapters: make(map[models.SourceKind]Adapter, 6)}
+	specs := []adapterSpec{
+		{models.SourceCoinGecko, cfg.CoinGecko, NewCoinGecko},
+		{models.SourceBinance, cfg.Binance, NewBinance},
+		{models.SourceUniswapV3, cfg.UniswapV3, NewUniswapV3},
+		{models.SourceAlphaVantage, cfg.AlphaVantage, NewAlphaVantage},
+		{models.SourceTwelveData, cfg.TwelveData, NewTwelveData},
+		{models.SourceStooq, cfg.Stooq, NewStooq},
+		{models.SourceGoldAPI, cfg.GoldAPI, NewGoldAPI},
+		{models.SourceYahoo, cfg.Yahoo, NewYahoo},
+		{models.SourceEIA, cfg.EIA, NewEIA},
+		{models.SourceFRED, cfg.FRED, NewFRED},
+		{models.SourceSwissquote, cfg.Swissquote, NewSwissquote},
+	}
 
-	if cfg.CoinGecko.Enabled {
-		a, err := NewCoinGecko(cfg.CoinGecko)
-		if err != nil {
-			return nil, fmt.Errorf("registry: coingecko: %w", err)
+	r := &Registry{adapters: make(map[models.SourceKind]Adapter, len(specs))}
+	for _, s := range specs {
+		if !s.cfg.Enabled {
+			continue
 		}
-		r.adapters[models.SourceCoinGecko] = a
-	}
-	if cfg.Binance.Enabled {
-		a, err := NewBinance(cfg.Binance)
+		a, err := s.ctor(s.cfg)
 		if err != nil {
-			return nil, fmt.Errorf("registry: binance: %w", err)
+			return nil, fmt.Errorf("registry: %s: %w", s.kind, err)
 		}
-		r.adapters[models.SourceBinance] = a
-	}
-	if cfg.UniswapV3.Enabled {
-		a, err := NewUniswapV3(cfg.UniswapV3)
-		if err != nil {
-			return nil, fmt.Errorf("registry: uniswap_v3: %w", err)
-		}
-		r.adapters[models.SourceUniswapV3] = a
-	}
-	if cfg.AlphaVantage.Enabled {
-		a, err := NewAlphaVantage(cfg.AlphaVantage)
-		if err != nil {
-			return nil, fmt.Errorf("registry: alpha_vantage: %w", err)
-		}
-		r.adapters[models.SourceAlphaVantage] = a
-	}
-	if cfg.TwelveData.Enabled {
-		a, err := NewTwelveData(cfg.TwelveData)
-		if err != nil {
-			return nil, fmt.Errorf("registry: twelve_data: %w", err)
-		}
-		r.adapters[models.SourceTwelveData] = a
-	}
-	if cfg.Stooq.Enabled {
-		a, err := NewStooq(cfg.Stooq)
-		if err != nil {
-			return nil, fmt.Errorf("registry: stooq: %w", err)
-		}
-		r.adapters[models.SourceStooq] = a
+		r.adapters[s.kind] = a
 	}
 
 	if len(r.adapters) == 0 {

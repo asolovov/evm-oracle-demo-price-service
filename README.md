@@ -1,9 +1,10 @@
 # evm-oracle-demo · `price-service`
 
 Off-chain price aggregation for the [evm-oracle-demo] family of services.
-Polls **six** free-tier sources across **ten** assets (5 crypto + 5 RWA),
-medians + deviation-guards each round, persists the raw + aggregated rows,
-and serves the result over gRPC.
+Polls multiple free-tier sources across **ten** assets (5 crypto + 5 RWA) —
+3 sources per crypto asset, 2–4 per RWA asset — medians + deviation-guards
+each round, persists the raw + aggregated rows, and serves the result over
+gRPC.
 
 This service is **demo-grade** by design. See [Production gaps](#production-gaps).
 
@@ -64,24 +65,33 @@ This service is **demo-grade** by design. See [Production gaps](#production-gaps
 
 ## Assets covered
 
-| Asset | Class  | CoinGecko id      | Binance pair | Uniswap V3 pool                                | Alpha Vantage | Twelve Data | Stooq    |
-|-------|--------|-------------------|--------------|------------------------------------------------|---------------|-------------|----------|
-| WETH  | crypto | `weth`            | `ETHUSDT`    | USDC/WETH 0.05%                                 | —             | —           | —        |
-| WBTC  | crypto | `wrapped-bitcoin` | `WBTCUSDT`   | USDC/WBTC 0.3%                                  | —             | —           | —        |
-| LINK  | crypto | `chainlink`       | `LINKUSDT`   | LINK/WETH 0.3%                                  | —             | —           | —        |
-| UNI   | crypto | `uniswap`         | `UNIUSDT`    | UNI/WETH 0.3%                                   | —             | —           | —        |
-| AAVE  | crypto | `aave`            | `AAVEUSDT`   | AAVE/WETH 0.3%                                  | —             | —           | —        |
-| XAU   | RWA    | —                 | —            | —                                              | `XAU`         | `XAU/USD`   | `xauusd` |
-| XAG   | RWA    | —                 | —            | —                                              | `XAG`         | `XAG/USD`   | `xagusd` |
-| SPX   | RWA    | —                 | —            | —                                              | `SPX`         | `SPX`       | `^spx`   |
-| WTI   | RWA    | —                 | —            | —                                              | `WTI`         | `WTI/USD`   | `cl.f`   |
-| HG    | RWA    | —                 | —            | —                                              | `HG`          | `COPPER`    | `hg.f`   |
+**Crypto** (CoinGecko + Binance + Uniswap V3):
+
+| Asset | CoinGecko id      | Binance pair | Uniswap V3 pool   |
+|-------|-------------------|--------------|-------------------|
+| WETH  | `weth`            | `ETHUSDT`    | USDC/WETH 0.05%   |
+| WBTC  | `wrapped-bitcoin` | `WBTCUSDT`   | USDC/WBTC 0.3%    |
+| LINK  | `chainlink`       | `LINKUSDT`   | LINK/WETH 0.3%    |
+| UNI   | `uniswap`         | `UNIUSDT`    | UNI/WETH 0.3%     |
+| AAVE  | `aave`            | `AAVEUSDT`   | AAVE/WETH 0.3%    |
+
+**RWA** — reworked in task 05.2 (see [`docs/sources.md`](docs/sources.md) for the why; the
+original Alpha Vantage / Twelve Data / Stooq mix returned equities for
+SPX/WTI/HG, paywalled, or was a dead endpoint):
+
+| Asset | Sources (symbols)                                         | Cadence |
+|-------|-----------------------------------------------------------|---------|
+| XAU   | gold-api `XAU` · Yahoo `GC=F` · Alpha Vantage `XAU` · Swissquote `XAU` | real-time |
+| XAG   | gold-api `XAG` · Yahoo `SI=F` · Alpha Vantage `XAG` · Swissquote `XAG` | real-time |
+| HG    | gold-api `HG` · Yahoo `HG=F`                              | real-time |
+| WTI   | EIA `RWTC` · FRED `DCOILWTICO`                            | daily spot (gov) |
+| SPX   | Yahoo `^GSPC` · FRED `SP500`                              | mixed (real-time + daily close) |
 
 Crypto refresh: 180 s · RWA refresh: 12 h. Sized to fit the binding
-free-tier ceilings over a 24 h window — Graph Gateway (~3 333 q/day
-across all crypto sources) and Alpha Vantage (25 req/day) — with margin
-for service restarts. Override via the per-asset `refresh_interval_sec`
-field if you're running with paid keys.
+free-tier ceilings over a 24 h window — Graph Gateway (~3 333 q/day) and
+Alpha Vantage (25 req/day, metals only). Keyless RWA sources (gold-api,
+Yahoo, Swissquote) have generous/undocumented limits; EIA + FRED are free
+keyed gov sources. Override per-asset `refresh_interval_sec` for paid keys.
 
 ---
 
@@ -148,12 +158,13 @@ Every config key has a `viper.SetDefault` in [`config/init.go`](config/init.go)
 | `GRPC_HOST` / `GRPC_PORT`              | `0.0.0.0:50051`|                                                    |
 | `GRPC_REFLECTION`                      | `true`         | Enable for `grpcurl` debugging.                    |
 | `HEALTHZ_HOST` / `HEALTHZ_PORT`        | `0.0.0.0:8080` | Serves /healthz, /readyz, /metrics.                |
-| `SOURCES_COINGECKO_ENABLED`            | `true`         | No API key needed.                                 |
-| `SOURCES_BINANCE_ENABLED`              | `true`         | No API key needed.                                 |
-| `SOURCES_STOOQ_ENABLED`                | `true`         | No API key needed.                                 |
-| `SOURCES_UNISWAP_V3_API_KEY`           | *(empty)*      | **Required** when uniswap_v3 is enabled.           |
-| `SOURCES_ALPHA_VANTAGE_API_KEY`        | *(empty)*      | **Required** when alpha_vantage is enabled.        |
-| `SOURCES_TWELVE_DATA_API_KEY`          | *(empty)*      | **Required** when twelve_data is enabled.          |
+| `SOURCES_COINGECKO_ENABLED`            | `true`         | No API key. Keyless: also binance, gold_api, yahoo, swissquote. |
+| `SOURCES_TWELVE_DATA_ENABLED`          | `false`        | Disabled — free tier paywalls RWA symbols.         |
+| `SOURCES_STOOQ_ENABLED`                | `false`        | Disabled — CSV endpoint dead (HTML errors).        |
+| `SOURCES_UNISWAP_V3_API_KEY`           | *(empty)*      | **Required** when uniswap_v3 is enabled (crypto).  |
+| `SOURCES_ALPHA_VANTAGE_API_KEY`        | *(empty)*      | **Required** when alpha_vantage is enabled (metals XAU/XAG only). |
+| `SOURCES_EIA_API_KEY`                  | *(empty)*      | **Required** when eia is enabled (WTI). Free: eia.gov/opendata. |
+| `SOURCES_FRED_API_KEY`                 | *(empty)*      | **Required** when fred is enabled (WTI + SPX). Free: fred.stlouisfed.org. |
 | `SOURCES_<source>_RATE_LIMIT` / `_BURST` | per-source defaults | Tokens/sec + bucket burst for the source's limiter. |
 | `AGGREGATION_MIN_SOURCES`              | `1`            | Min successful fetches required for a round.       |
 | `AGGREGATION_MAX_DEVIATION`            | `0.10`         | Reject if `|delta|/last > MaxDeviation`.           |

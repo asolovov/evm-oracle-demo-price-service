@@ -15,14 +15,14 @@ import (
 	"github.com/asolovov/evm-oracle-demo-price-service/internal/models"
 )
 
-// AlphaVantage adapter — fetches USD spot rates / commodities prices.
+// AlphaVantage adapter — fetches USD spot rates for precious metals only.
 //
-// For metals (XAU, XAG) and FX-like commodities it hits
-// CURRENCY_EXCHANGE_RATE; for index/commodity series (SPX, WTI, HG) it
-// returns the latest close from GLOBAL_QUOTE. Both are free-tier endpoints
-// (5 req/min, 500 req/day). Symbol shape matches AssetConfig.
-//
-// The adapter inspects the symbol to choose the right query function.
+// It serves the symbols in metalsAndFX (XAU, XAG) via CURRENCY_EXCHANGE_RATE.
+// Any other symbol is rejected with ErrConfig — the adapter MUST NOT fall
+// through to GLOBAL_QUOTE, which is equities-only and silently resolves
+// commodity tickers to unrelated stocks (e.g. "WTI" → W&T Offshore, "HG" →
+// an unrelated equity). That misresolution is exactly the bug task 05.2
+// exists to fix; the allowlist below is the guard that keeps it fixed.
 type AlphaVantage struct {
 	*baseClient
 }
@@ -67,19 +67,8 @@ type alphaVantageFXResp struct {
 	ErrorMsg string `json:"Error Message"`
 }
 
-type alphaVantageQuoteResp struct {
-	Quote struct {
-		Symbol        string `json:"01. symbol"`
-		Price         string `json:"05. price"`
-		LatestDay     string `json:"07. latest trading day"`
-	} `json:"Global Quote"`
-	Note     string `json:"Note"`
-	Info     string `json:"Information"`
-	ErrorMsg string `json:"Error Message"`
-}
-
-// metalsAndFX is the set of symbols this adapter queries via
-// CURRENCY_EXCHANGE_RATE; everything else goes through GLOBAL_QUOTE.
+// metalsAndFX is the allowlist of symbols this adapter serves, via
+// CURRENCY_EXCHANGE_RATE. Anything else is rejected (see Fetch).
 var metalsAndFX = map[string]struct{}{
 	"XAU": {},
 	"XAG": {},
@@ -95,7 +84,20 @@ func (a *AlphaVantage) Fetch(ctx context.Context, symbol string) (models.RawPric
 	if _, isFX := metalsAndFX[upperSym]; isFX {
 		return a.fetchFX(ctx, upperSym)
 	}
-	return a.fetchQuote(ctx, upperSym)
+	// Allowlist guard: never route a non-metal symbol to GLOBAL_QUOTE.
+	// GLOBAL_QUOTE is equities-only and would resolve commodity/index
+	// tickers to unrelated stocks. Callers must not map non-metals here.
+	return models.RawPrice{}, fmt.Errorf("%w: alpha_vantage only serves metals %v, not %q",
+		ErrConfig, mapKeys(metalsAndFX), upperSym)
+}
+
+// mapKeys returns the keys of a set, for diagnostics.
+func mapKeys(m map[string]struct{}) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func (a *AlphaVantage) fetchFX(ctx context.Context, symbol string) (models.RawPrice, error) {
@@ -133,50 +135,6 @@ func (a *AlphaVantage) fetchFX(ctx context.Context, symbol string) (models.RawPr
 		// Alpha Vantage reports "2026-05-21 18:30:00" or similar. Best-effort
 		// parse — fall back to now on failure.
 		if t, perr := time.Parse("2006-01-02 15:04:05", parsed.Rate.LastRefresh); perr == nil {
-			observed = t.UTC()
-		}
-	}
-	return models.RawPrice{
-		Source:           models.SourceAlphaVantage,
-		Price:            price,
-		FetchedAt:        now,
-		SourceObservedAt: observed,
-		RawPayload:       body,
-	}, nil
-}
-
-func (a *AlphaVantage) fetchQuote(ctx context.Context, symbol string) (models.RawPrice, error) {
-	q := url.Values{}
-	q.Set("function", "GLOBAL_QUOTE")
-	q.Set("symbol", symbol)
-	q.Set("apikey", a.apiKey)
-
-	body, status, err := a.do(ctx, q)
-	if err != nil {
-		return models.RawPrice{}, err
-	}
-	if status != http.StatusOK {
-		return models.RawPrice{}, fmt.Errorf("%w: http %d: %s", ErrUpstream, status, truncate(body, 256))
-	}
-
-	var parsed alphaVantageQuoteResp
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: decode body: %w", ErrUpstream, err)
-	}
-	if err := alphaVantageError(parsed.Note, parsed.Info, parsed.ErrorMsg); err != nil {
-		return models.RawPrice{}, err
-	}
-	if parsed.Quote.Price == "" {
-		return models.RawPrice{}, fmt.Errorf("%w: empty quote price for %q", ErrNoData, symbol)
-	}
-	price, err := strconv.ParseFloat(parsed.Quote.Price, 64)
-	if err != nil {
-		return models.RawPrice{}, fmt.Errorf("%w: parse price %q: %w", ErrUpstream, parsed.Quote.Price, err)
-	}
-	now := time.Now().UTC()
-	observed := now
-	if parsed.Quote.LatestDay != "" {
-		if t, perr := time.Parse("2006-01-02", parsed.Quote.LatestDay); perr == nil {
 			observed = t.UTC()
 		}
 	}
