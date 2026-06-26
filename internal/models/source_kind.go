@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// SourceKind enumerates the six price sources this service polls.
+// SourceKind enumerates the price sources this service polls.
 //
 // Int-backed for cheap comparison + zero-value detection. The string form is
 // the stable identifier used everywhere off-chain (config keys, log fields,
@@ -15,6 +15,10 @@ type SourceKind int
 // SourceKind enum values. SourceUnknown is the zero value and is always
 // rejected at boundaries; the remaining values map 1:1 to the adapter
 // packages under internal/sources/.
+//
+// Adding a value here is a four-table change — also update sourceKindStrings,
+// sourceKindByString, AllSources, and the AssetClass switch below, or the
+// exhaustive linter fails and the source resolves to AssetClassUnknown.
 const (
 	SourceUnknown SourceKind = iota
 	SourceCoinGecko
@@ -23,18 +27,28 @@ const (
 	SourceAlphaVantage
 	SourceTwelveData
 	SourceStooq
+	SourceGoldAPI
+	SourceYahoo
+	SourceEIA
+	SourceFRED
+	SourceSwissquote
 )
 
 // sourceKindStrings is the canonical String() representation, indexed by the
 // SourceKind value. Order MUST match the iota block above.
 var sourceKindStrings = [...]string{
-	SourceUnknown: unknownLabel,
+	SourceUnknown:      unknownLabel,
 	SourceCoinGecko:    "coingecko",
 	SourceBinance:      "binance",
 	SourceUniswapV3:    "uniswap_v3",
 	SourceAlphaVantage: "alpha_vantage",
 	SourceTwelveData:   "twelve_data",
 	SourceStooq:        "stooq",
+	SourceGoldAPI:      "gold_api",
+	SourceYahoo:        "yahoo",
+	SourceEIA:          "eia",
+	SourceFRED:         "fred",
+	SourceSwissquote:   "swissquote",
 }
 
 // sourceKindByString is the reverse lookup for SourceKindFromString.
@@ -45,6 +59,11 @@ var sourceKindByString = map[string]SourceKind{
 	"alpha_vantage": SourceAlphaVantage,
 	"twelve_data":   SourceTwelveData,
 	"stooq":         SourceStooq,
+	"gold_api":      SourceGoldAPI,
+	"yahoo":         SourceYahoo,
+	"eia":           SourceEIA,
+	"fred":          SourceFRED,
+	"swissquote":    SourceSwissquote,
 }
 
 // AllSources returns every known SourceKind in iteration order. Excludes
@@ -57,6 +76,11 @@ func AllSources() []SourceKind {
 		SourceAlphaVantage,
 		SourceTwelveData,
 		SourceStooq,
+		SourceGoldAPI,
+		SourceYahoo,
+		SourceEIA,
+		SourceFRED,
+		SourceSwissquote,
 	}
 }
 
@@ -80,7 +104,8 @@ func (s SourceKind) AssetClass() AssetClass {
 	switch s {
 	case SourceCoinGecko, SourceBinance, SourceUniswapV3:
 		return AssetClassCrypto
-	case SourceAlphaVantage, SourceTwelveData, SourceStooq:
+	case SourceAlphaVantage, SourceTwelveData, SourceStooq,
+		SourceGoldAPI, SourceYahoo, SourceEIA, SourceFRED, SourceSwissquote:
 		return AssetClassRWA
 	case SourceUnknown:
 		return AssetClassUnknown

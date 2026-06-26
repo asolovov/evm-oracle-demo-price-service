@@ -80,19 +80,72 @@ func setDefaults() {
 	viper.SetDefault("sources.alpha_vantage.rate_limit", 0.08) // ~5 req/min free
 	viper.SetDefault("sources.alpha_vantage.burst", 1)
 
-	viper.SetDefault("sources.twelve_data.enabled", true)
+	// Twelve Data: DISABLED by default. Its free tier paywalls every RWA
+	// symbol we need (XAG/USD, WTI/USD, COPPER, SPX → 404 "Grow/Venture
+	// plan"), so it serves nothing here. Left in config so it can be
+	// re-enabled with a paid key. Disabled => its api_key is not required
+	// at startup (see Validate) and no adapter is built.
+	viper.SetDefault("sources.twelve_data.enabled", false)
 	viper.SetDefault("sources.twelve_data.base_url", "https://api.twelvedata.com")
 	viper.SetDefault("sources.twelve_data.api_key", "")
 	viper.SetDefault("sources.twelve_data.timeout", "15s")
 	viper.SetDefault("sources.twelve_data.rate_limit", 0.13) // ~8 req/min free
 	viper.SetDefault("sources.twelve_data.burst", 2)
 
-	viper.SetDefault("sources.stooq.enabled", true)
+	// Stooq: DISABLED by default. The CSV quote endpoint
+	// (stooq.com/q/l/?...&e=csv) returns an HTML error page for every
+	// symbol (bot/geo block), so it never produces data. Left in config
+	// in case the endpoint becomes reachable again.
+	viper.SetDefault("sources.stooq.enabled", false)
 	viper.SetDefault("sources.stooq.base_url", "https://stooq.com")
 	viper.SetDefault("sources.stooq.api_key", "")
 	viper.SetDefault("sources.stooq.timeout", "15s")
 	viper.SetDefault("sources.stooq.rate_limit", 1.0)
 	viper.SetDefault("sources.stooq.burst", 2)
+
+	// gold-api.com — no auth, no documented rate limit. Covers XAU/XAG/HG.
+	// NOTE: api.gold-api.com is a different service from goldapi.io.
+	viper.SetDefault("sources.gold_api.enabled", true)
+	viper.SetDefault("sources.gold_api.base_url", "https://api.gold-api.com")
+	viper.SetDefault("sources.gold_api.api_key", "")
+	viper.SetDefault("sources.gold_api.timeout", "10s")
+	viper.SetDefault("sources.gold_api.rate_limit", 1.0)
+	viper.SetDefault("sources.gold_api.burst", 2)
+
+	// Yahoo Finance v8 chart — no auth. Covers all RWA (GC=F/SI=F/CL=F/
+	// HG=F/^GSPC). Unofficial endpoint; community guidance ~0.5s spacing.
+	viper.SetDefault("sources.yahoo.enabled", true)
+	viper.SetDefault("sources.yahoo.base_url", "https://query1.finance.yahoo.com")
+	viper.SetDefault("sources.yahoo.api_key", "")
+	viper.SetDefault("sources.yahoo.timeout", "10s")
+	viper.SetDefault("sources.yahoo.rate_limit", 2.0)
+	viper.SetDefault("sources.yahoo.burst", 4)
+
+	// EIA Open Data v2 — free key required. WTI daily spot (RWTC).
+	// ~9000 req/hr, so generous limits; daily cadence + multi-day lag.
+	viper.SetDefault("sources.eia.enabled", true)
+	viper.SetDefault("sources.eia.base_url", "https://api.eia.gov")
+	viper.SetDefault("sources.eia.api_key", "")
+	viper.SetDefault("sources.eia.timeout", "15s")
+	viper.SetDefault("sources.eia.rate_limit", 5.0)
+	viper.SetDefault("sources.eia.burst", 5)
+
+	// FRED (St. Louis Fed) — free key required. WTI (DCOILWTICO) + SPX
+	// (SP500), both daily close / business-day lag. 120 req/min.
+	viper.SetDefault("sources.fred.enabled", true)
+	viper.SetDefault("sources.fred.base_url", "https://api.stlouisfed.org")
+	viper.SetDefault("sources.fred.api_key", "")
+	viper.SetDefault("sources.fred.timeout", "15s")
+	viper.SetDefault("sources.fred.rate_limit", 2.0)
+	viper.SetDefault("sources.fred.burst", 4)
+
+	// Swissquote public feed — no auth. Metals (XAU/XAG). Unofficial.
+	viper.SetDefault("sources.swissquote.enabled", true)
+	viper.SetDefault("sources.swissquote.base_url", "https://forex-data-feed.swissquote.com")
+	viper.SetDefault("sources.swissquote.api_key", "")
+	viper.SetDefault("sources.swissquote.timeout", "10s")
+	viper.SetDefault("sources.swissquote.rate_limit", 1.0)
+	viper.SetDefault("sources.swissquote.burst", 2)
 
 	// Aggregation — demo-permissive freshness by default (spec §5.3).
 	viper.SetDefault("aggregation.min_sources", 1)
@@ -176,16 +229,27 @@ func defaultAssets() []map[string]interface{} {
 			"refresh_interval_sec": 180,
 		},
 		// --- RWA (refresh every 12h) ---
-		// 5 RWA assets × 2 polls/day = 10 calls/day per source. Alpha Vantage
-		// free tier is 25 req/day; 12 h cadence leaves ~60% budget for
-		// service restarts (which trigger an immediate first tick on Start).
+		// Source set reworked in task 05.2 (the original alpha_vantage /
+		// twelve_data / stooq mix was broken — AV GLOBAL_QUOTE returned
+		// equities for SPX/WTI/HG, TD free-tier paywalls RWA, Stooq CSV is
+		// dead). See docs/sources.md and the rwa-data-source-research note.
+		//
+		// Cadence note: metals + copper use real-time sources. WTI uses EIA +
+		// FRED (both daily official-gov spot, mutually consistent — avoids
+		// mixing a real-time future with a daily spot). SPX mixes Yahoo
+		// (real-time) + FRED (daily close) because no 2nd real-time free SPX
+		// source exists; the median may lag intraday. Symbols:
+		//   gold_api: XAU / XAG / HG       yahoo: GC=F / SI=F / HG=F / CL=F / ^GSPC
+		//   eia:      RWTC (WTI series)    fred:  DCOILWTICO (WTI) / SP500 (SPX)
+		//   alpha_vantage: XAU / XAG (FX)  swissquote: XAU / XAG
 		{
 			"id":    "xau",
 			"class": "rwa",
 			"symbols": map[string]string{
+				"gold_api":      "XAU",
+				"yahoo":         "GC=F",
 				"alpha_vantage": "XAU",
-				"twelve_data":   "XAU/USD",
-				"stooq":         "xauusd",
+				"swissquote":    "XAU",
 			},
 			"refresh_interval_sec": 12 * 60 * 60,
 		},
@@ -193,9 +257,10 @@ func defaultAssets() []map[string]interface{} {
 			"id":    "xag",
 			"class": "rwa",
 			"symbols": map[string]string{
+				"gold_api":      "XAG",
+				"yahoo":         "SI=F",
 				"alpha_vantage": "XAG",
-				"twelve_data":   "XAG/USD",
-				"stooq":         "xagusd",
+				"swissquote":    "XAG",
 			},
 			"refresh_interval_sec": 12 * 60 * 60,
 		},
@@ -203,9 +268,8 @@ func defaultAssets() []map[string]interface{} {
 			"id":    "spx",
 			"class": "rwa",
 			"symbols": map[string]string{
-				"alpha_vantage": "SPX",
-				"twelve_data":   "SPX",
-				"stooq":         "^spx",
+				"yahoo": "^GSPC",
+				"fred":  "SP500",
 			},
 			"refresh_interval_sec": 12 * 60 * 60,
 		},
@@ -213,9 +277,8 @@ func defaultAssets() []map[string]interface{} {
 			"id":    "wti",
 			"class": "rwa",
 			"symbols": map[string]string{
-				"alpha_vantage": "WTI",
-				"twelve_data":   "WTI/USD",
-				"stooq":         "cl.f",
+				"eia":  "RWTC",
+				"fred": "DCOILWTICO",
 			},
 			"refresh_interval_sec": 12 * 60 * 60,
 		},
@@ -223,9 +286,8 @@ func defaultAssets() []map[string]interface{} {
 			"id":    "hg",
 			"class": "rwa",
 			"symbols": map[string]string{
-				"alpha_vantage": "HG",
-				"twelve_data":   "COPPER",
-				"stooq":         "hg.f",
+				"gold_api": "HG",
+				"yahoo":    "HG=F",
 			},
 			"refresh_interval_sec": 12 * 60 * 60,
 		},
@@ -276,14 +338,28 @@ func (s *Scheme) Validate() error {
 		}
 	}
 	// Sources whose API key is empty but whose adapter requires one are flagged.
-	if s.Sources.UniswapV3.Enabled && s.Sources.UniswapV3.APIKey == "" {
-		return errors.New("sources.uniswap_v3.api_key is required when the uniswap_v3 source is enabled")
+	return s.validateSourceKeys()
+}
+
+// validateSourceKeys fails fast when a key-requiring source is enabled
+// without its API key. Keyless sources (CoinGecko, Binance, Stooq, gold-api,
+// Yahoo, Swissquote) are not listed.
+func (s *Scheme) validateSourceKeys() error {
+	keyed := []struct {
+		src  SourceConfig
+		name string
+		hint string
+	}{
+		{s.Sources.UniswapV3, "uniswap_v3", ""},
+		{s.Sources.AlphaVantage, "alpha_vantage", ""},
+		{s.Sources.TwelveData, "twelve_data", ""},
+		{s.Sources.EIA, "eia", " (free key: https://www.eia.gov/opendata/register.php)"},
+		{s.Sources.FRED, "fred", " (free key: https://fred.stlouisfed.org/docs/api/api_key.html)"},
 	}
-	if s.Sources.AlphaVantage.Enabled && s.Sources.AlphaVantage.APIKey == "" {
-		return errors.New("sources.alpha_vantage.api_key is required when the alpha_vantage source is enabled")
-	}
-	if s.Sources.TwelveData.Enabled && s.Sources.TwelveData.APIKey == "" {
-		return errors.New("sources.twelve_data.api_key is required when the twelve_data source is enabled")
+	for _, k := range keyed {
+		if k.src.Enabled && k.src.APIKey == "" {
+			return fmt.Errorf("sources.%s.api_key is required when the %s source is enabled%s", k.name, k.name, k.hint)
+		}
 	}
 	return nil
 }

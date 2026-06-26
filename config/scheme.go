@@ -56,7 +56,12 @@ type HealthzConfig struct {
 	Port int    `mapstructure:"port"`
 }
 
-// SourcesConfig holds per-adapter settings for the six price sources.
+// SourcesConfig holds per-adapter settings for every price source.
+//
+// Crypto: CoinGecko, Binance, UniswapV3. RWA: AlphaVantage (metals FX only),
+// GoldAPI (metals + copper), Yahoo (all RWA), EIA + FRED (WTI / SPX), and
+// Swissquote (metals). TwelveData + Stooq are retained but disabled by
+// default — neither serves RWA on its free tier (see docs/sources.md).
 type SourcesConfig struct {
 	CoinGecko    SourceConfig `mapstructure:"coingecko"`
 	Binance      SourceConfig `mapstructure:"binance"`
@@ -64,6 +69,11 @@ type SourcesConfig struct {
 	AlphaVantage SourceConfig `mapstructure:"alpha_vantage"`
 	TwelveData   SourceConfig `mapstructure:"twelve_data"`
 	Stooq        SourceConfig `mapstructure:"stooq"`
+	GoldAPI      SourceConfig `mapstructure:"gold_api"`
+	Yahoo        SourceConfig `mapstructure:"yahoo"`
+	EIA          SourceConfig `mapstructure:"eia"`
+	FRED         SourceConfig `mapstructure:"fred"`
+	Swissquote   SourceConfig `mapstructure:"swissquote"`
 }
 
 // SourceConfig is the uniform shape for every source adapter.
