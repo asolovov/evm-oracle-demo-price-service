@@ -46,26 +46,11 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install pinned dev tools (buf, protoc plugins, golangci-lint, migrate)
+        run: make tools
 
-      - name: Install proto tools
-        run: make proto-install
-
-      - name: Generate protos
-        run: make proto-generate-all
-
-      - name: Install golangci-lint
-        run: make lint-install
-
-      - name: Install go-swagger
-        run: make swagger-install
-
-      - name: Validate Swagger spec
-        run: make swagger-validate
-
-      - name: Generate API code
-        run: make generate-api
+      - name: Generate proto stubs
+        run: make generate
 
       - name: Run CI checks (lint)
         run: make lint
