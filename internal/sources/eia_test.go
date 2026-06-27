@@ -32,7 +32,9 @@ func TestEIAHappyPath(t *testing.T) {
 			t.Errorf("api key missing: %s", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"data":[{"period":"2026-06-22","value":78.94}]}}`))
+		// EIA sends `value` as a JSON STRING — the fixture must match the
+		// real API or it won't guard the string→float decode.
+		_, _ = w.Write([]byte(`{"response":{"data":[{"period":"2026-06-22","value":"78.94"}]}}`))
 	}))
 
 	got, err := a.Fetch(context.Background(), "RWTC")
@@ -44,6 +46,17 @@ func TestEIAHappyPath(t *testing.T) {
 	}
 	if got.Price != 78.94 {
 		t.Fatalf("Price = %v, want 78.94", got.Price)
+	}
+}
+
+func TestEIAEmptyValue(t *testing.T) {
+	a := newTestEIA(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"data":[{"period":"2026-06-22","value":""}]}}`))
+	}))
+	_, err := a.Fetch(context.Background(), "RWTC")
+	if !errors.Is(err, ErrNoData) {
+		t.Fatalf("expected ErrNoData for empty value, got %v", err)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/asolovov/evm-oracle-demo-price-service/config"
@@ -54,8 +55,11 @@ func (e *EIA) Kind() models.SourceKind { return models.SourceEIA }
 type eiaResp struct {
 	Response struct {
 		Data []struct {
-			Period string  `json:"period"`
-			Value  float64 `json:"value"`
+			Period string `json:"period"`
+			// EIA returns the value as a JSON string ("78.94"), not a
+			// number — decode as string and parse, or json.Unmarshal fails
+			// the whole body and the row is silently dropped.
+			Value string `json:"value"`
 		} `json:"data"`
 	} `json:"response"`
 }
@@ -104,7 +108,14 @@ func (e *EIA) Fetch(ctx context.Context, series string) (models.RawPrice, error)
 		return models.RawPrice{}, fmt.Errorf("%w: eia returned no rows for series %q", ErrNoData, series)
 	}
 	row := parsed.Response.Data[0]
-	if row.Value <= 0 {
+	if row.Value == "" {
+		return models.RawPrice{}, fmt.Errorf("%w: eia returned empty value for series %q", ErrNoData, series)
+	}
+	price, perr := strconv.ParseFloat(row.Value, 64)
+	if perr != nil {
+		return models.RawPrice{}, fmt.Errorf("%w: parse value %q: %w", ErrUpstream, row.Value, perr)
+	}
+	if price <= 0 {
 		return models.RawPrice{}, fmt.Errorf("%w: eia non-positive value for series %q", ErrNoData, series)
 	}
 
@@ -116,7 +127,7 @@ func (e *EIA) Fetch(ctx context.Context, series string) (models.RawPrice, error)
 	}
 	return models.RawPrice{
 		Source:           models.SourceEIA,
-		Price:            row.Value,
+		Price:            price,
 		FetchedAt:        now,
 		SourceObservedAt: observed,
 		RawPayload:       body,
